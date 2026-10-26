@@ -1,0 +1,5 @@
+fastapi
+httpx
+psycopg[binary]>=3.2
+openpyxl
+python-multipart

@@ -1,0 +1,12 @@
+# bobot model (disimpan di Hugging Face Hub, bukan di repo)
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.ckpt
+
+# umum
+__pycache__/
+.env
+node_modules/
+dist/
