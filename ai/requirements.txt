@@ -1,8 +1,0 @@
-# torch dipasang terpisah di Dockerfile (versi CPU).
-transformers==5.19.0
-fastapi
-uvicorn
-pydantic>=2
-emoji
-huggingface_hub
-psycopg[binary]>=3.2

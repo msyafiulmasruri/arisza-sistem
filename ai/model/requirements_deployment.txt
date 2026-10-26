@@ -1,5 +1,0 @@
-torch
-transformers==5.19.0
-emoji
-fastapi
-uvicorn
