@@ -43,6 +43,9 @@ export const api = {
   interpretasi: (media) => minta(`/api/media/${encodeURIComponent(media)}/interpretation`),
   jalankan: (media) => minta(`/api/media/${encodeURIComponent(media)}/interpret`, { method: "POST" }),
   ulangiRun: (id) => minta(`/api/runs/${id}/retry`, { method: "POST" }),
+  tabel: ({ media = "", label = "", page = 1, perPage = 25 }) =>
+    minta(`/api/responses?media=${encodeURIComponent(media)}&label=${label}&page=${page}&per_page=${perPage}`),
+  lengkapiPreprocess: () => minta("/api/preprocess", { method: "POST" }),
   batch: () => minta("/api/batches"),
   ulangiBatch: (id) => minta(`/api/batches/${id}/retry`, { method: "POST" }),
   impor: (berkas, mediaBawaan) => {

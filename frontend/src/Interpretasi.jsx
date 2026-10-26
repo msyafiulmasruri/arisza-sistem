@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
-import { NAMA, Pesan, STATUS, aktif, tanggal, useBerkala } from "./util.jsx";
+import { Pesan, STATUS, aktif, durasi, tanggal, useBerkala } from "./util.jsx";
 
 const TAHAP = [
   ["positive", "Pola opini positif"],
@@ -15,23 +15,68 @@ function Tahap({ run }) {
     <ol className="tahap">
       {TAHAP.map(([id, judul]) => {
         const t = per[id];
+        const pola = id !== "saran";
         return (
           <li key={id} className={`t-${t.status}`}>
             <div className="t-kepala">
               <h3>{judul}</h3>
               <span className="chip">{STATUS[t.status]}</span>
-              {t.status === "done" && t.duration > 0 && <span className="redup">{Math.round(t.duration)} detik</span>}
-              {id !== "saran" && t.status === "done" && t.texts_total > 0 && (
-                <span className="redup">{t.texts_used} dari {t.texts_total} teks dipakai</span>
+              {t.status === "done" && (
+                <span className="redup">
+                  {pola && t.texts_total > 0 ? `${t.texts_total.toLocaleString("id-ID")} teks · ` : ""}
+                  {t.chunks_total ? `${t.chunks_total} panggilan Llama · ` : ""}
+                  <b>{durasi(t.duration)}</b>
+                </span>
               )}
             </div>
-            {t.status === "running" && <p className="redup">Llama sedang menyusun {judul.toLowerCase()}…</p>}
+            {t.status === "running" && (
+              <div className="kemajuan">
+                {t.chunks_total ? (
+                  <>
+                    <progress max={t.chunks_total} value={t.chunks_done} aria-label={`Kemajuan ${judul}`} />
+                    <span className="redup">Panggilan Llama {t.chunks_done} dari {t.chunks_total}</span>
+                  </>
+                ) : (
+                  <span className="redup">Menyiapkan teks…</span>
+                )}
+              </div>
+            )}
             {t.status === "failed" && <Pesan jenis="galat">{t.error}</Pesan>}
             {t.status === "done" && <p className="hasil">{t.result}</p>}
           </li>
         );
       })}
     </ol>
+  );
+}
+
+const totalDurasi = (run) => run.tahap.reduce((a, t) => a + (t.status === "done" ? Number(t.duration || 0) : 0), 0);
+
+function WaktuSemuaMedia({ media }) {
+  const baris = media.filter((m) => m.interpretasi.ada_hasil && m.interpretasi.total_detik != null);
+  if (!baris.length) return null;
+  return (
+    <div className="blok">
+      <h2>Waktu pemrosesan Llama per media</h2>
+      <p className="redup">
+        Dari interpretasi terakhir yang selesai pada tiap media. Waktu diukur di Space (CPU) dan tidak termasuk
+        pemuatan model.
+      </p>
+      <div className="gulung">
+        <table className="tabel-data">
+          <thead><tr><th>Media</th><th className="angka">Jumlah teks</th><th className="angka">Total waktu Llama</th></tr></thead>
+          <tbody>
+            {baris.map((m) => (
+              <tr key={m.media}>
+                <td>{m.media}</td>
+                <td className="angka">{(m.interpretasi.n_teks ?? 0).toLocaleString("id-ID")}</td>
+                <td className="angka">{durasi(m.interpretasi.total_detik)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -130,7 +175,7 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
         <Pesan jenis="galat">{galat}</Pesan>
         {data?.menunggu_prediksi > 0 && <Pesan>Prediksi sentimen untuk {data.menunggu_prediksi} teks masih berjalan. Interpretasi bisa dimulai setelah selesai.</Pesan>}
         {info?.interpretasi.basi && !jalan && <Pesan>Ada data baru sejak interpretasi terakhir. Perbarui agar hasil sesuai data terbaru.</Pesan>}
-        {jalan && <Pesan>Proses berjalan di layanan AI dan tersimpan di basis data. Halaman ini boleh ditutup; hasil tetap ada saat dibuka lagi. Panggilan pertama bisa lama karena model dimuat dulu.</Pesan>}
+        {jalan && <Pesan>Llama memproses seluruh teks hasil preprocessing, jadi bisa memakan waktu lama (menit sampai puluhan menit per media di CPU). Proses tersimpan di basis data. Halaman ini boleh ditutup, hasil tetap ada saat dibuka lagi.</Pesan>}
         {gagal && <Pesan jenis="galat">{run.error}</Pesan>}
 
         {!data && !galat && <p className="redup">Memuat…</p>}
@@ -141,6 +186,7 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
             <div className="ai-kepala">
               <span className="chip ai">Dihasilkan AI</span>
               <span className="redup">{selesaiTerbaru ? `Selesai ${tanggal(run.finished_at)}` : `Dimulai ${tanggal(run.created_at)}`}</span>
+              {totalDurasi(run) > 0 && <span className="redup">Total waktu Llama: <b>{durasi(totalDurasi(run))}</b></span>}
             </div>
             <Tahap run={run} />
             {selesaiTerbaru && run.catatan && <p className="catatan-kecil">{run.catatan}</p>}
@@ -155,7 +201,8 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
             {sebelumnya.catatan && <p className="catatan-kecil">{sebelumnya.catatan}</p>}
           </details>
         )}
+
+        <WaktuSemuaMedia media={media} />
       </section>
     </div>
-  );
-}
+  );}

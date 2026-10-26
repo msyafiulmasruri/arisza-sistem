@@ -30,8 +30,13 @@ KOLOM_TEKS = {"text", "teks", "komentar", "ulasan", "review", "comment", "tangga
 KOLOM_MEDIA = {"media", "sumber", "platform", "source"}
 TAHAP = ["positive", "neutral", "negative", "saran"]
 STOPWORD = set(
-    "yang dan di ke dari ini itu untuk dengan ada juga tidak nya aja saja sih deh dong lagi sudah udah "
-    "bisa banget sangat atau karena jadi pada dalam kalau kalo kok lah pun akan sama buat yg gak nggak ga "
+    "yang dan di ke dari ini itu untuk dengan ada juga tidak nya aja saja sih deh dong lagi sudah udah belum "
+    "bisa sangat atau karena jadi pada dalam kalau kok lah pun akan sama buat yg gak nggak ga tak bukan "
+    "adalah ialah oleh para mereka kami kita saya aku kamu anda dia ia lebih paling sekali banget amat agak "
+    "masih sedang telah pernah hanya cuma mau ingin harus perlu dapat boleh bagi atas bawah antara setelah "
+    "sebelum saat ketika waktu hingga sampai tetapi namun tapi serta lalu kemudian sehingga jika bila supaya "
+    "agar seperti sebagai tentang terhadap dengan yaitu yakni apa siapa kapan dimana bagaimana kenapa mengapa "
+    "berapa mana sini situ sana dulu nanti tadi kini lagi pas dah mah lho loh ya yah nih tuh kan kah pun "
     "the and for you with this that are was have".split()
 )
 
@@ -242,8 +247,9 @@ def ringkasan():
         selesai = {
             r["media"]: r
             for r in conn.execute(
-                "select distinct on (media) id, media, n_texts, finished_at from interpretation_runs "
-                "where status='done' order by media, id desc"
+                "select distinct on (r.media) r.id, r.media, r.n_texts, r.finished_at, "
+                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik "
+                "from interpretation_runs r where r.status='done' order by r.media, r.id desc"
             ).fetchall()
         }
         for m in media:
@@ -252,6 +258,8 @@ def ringkasan():
                 "status": t["status"] if t else None,
                 "run_id": t["id"] if t else None,
                 "selesai_pada": s["finished_at"] if s else None,
+                "total_detik": float(s["total_detik"]) if s and s["total_detik"] is not None else None,
+                "n_teks": s["n_texts"] if s else None,
                 "ada_hasil": s is not None,
                 # data bertambah sejak interpretasi terakhir
                 "basi": bool(s) and s["n_texts"] != m["total"],
@@ -260,18 +268,65 @@ def ringkasan():
 
 
 @app.get("/api/media/{media}/words", dependencies=[Depends(admin)])
-def kata(media: str, per_sentimen: int = 40):
+def kata(media: str, per_sentimen: int = 60):
+    """Frekuensi kata dari teks hasil preprocessing (text_clean), per sentimen."""
     with konek() as conn:
         baris = conn.execute(
-            "select label, text from responses where media=%s and status='ok' limit 20000", (media,)
+            "select label, text_clean from responses where media=%s and status='ok' and text_clean is not null limit 50000",
+            (media,),
         ).fetchall()
+        belum = conn.execute(
+            "select count(*) as n from responses where media=%s and status in ('ok','empty') and text_clean is null",
+            (media,),
+        ).fetchone()["n"]
     hitung = {"positive": Counter(), "neutral": Counter(), "negative": Counter()}
     for b in baris:
-        teks = re.sub(r"https?://\S+|@\w+", " ", b["text"].lower())
-        for w in re.findall(r"[a-z]{3,}", teks):
+        for w in re.findall(r"[a-z]{3,}", b["text_clean"].lower()):
             if w not in STOPWORD:
                 hitung[b["label"]][w] += 1
-    return {l: [{"kata": k, "jumlah": n} for k, n in c.most_common(per_sentimen)] for l, c in hitung.items()}
+    hasil = {l: [{"kata": k, "jumlah": n} for k, n in c.most_common(per_sentimen)] for l, c in hitung.items()}
+    hasil["belum_bersih"] = belum
+    return hasil
+
+
+@app.get("/api/responses", dependencies=[Depends(admin)])
+def tabel(media: str = "", label: str = "", page: int = 1, per_page: int = 25):
+    """Tabel data: teks awal, hasil preprocessing, prediksi sentimen, confidence, media."""
+    per_page = max(1, min(per_page, 100))
+    page = max(1, page)
+    kondisi, param = ["status <> 'pending'"], []
+    if media:
+        kondisi.append("media = %s")
+        param.append(media)
+    if label in ("positive", "neutral", "negative"):
+        kondisi.append("label = %s")
+        param.append(label)
+    elif label == "empty":
+        kondisi.append("status = 'empty'")
+    where = " and ".join(kondisi)
+    with konek() as conn:
+        total = conn.execute(f"select count(*) as n from responses where {where}", param).fetchone()["n"]
+        baris = conn.execute(
+            f"select id, media, text, text_clean, status, label, confidence from responses where {where} "
+            "order by id limit %s offset %s",
+            param + [per_page, (page - 1) * per_page],
+        ).fetchall()
+        belum = conn.execute(
+            "select count(*) as n from responses where status in ('ok','empty') and text_clean is null"
+            + (" and media = %s" if media else ""),
+            [media] if media else [],
+        ).fetchone()["n"]
+    return {"total": total, "page": page, "per_page": per_page, "rows": baris, "belum_bersih": belum}
+
+
+@app.post("/api/preprocess", dependencies=[Depends(admin)], status_code=202)
+def lengkapi_preprocess():
+    """Minta Space mengisi teks hasil preprocessing untuk data yang diimpor sebelum fitur ini ada."""
+    try:
+        panggil_space("/jobs/preprocess", {})
+    except Exception as exc:
+        raise HTTPException(502, f"Gagal menghubungi layanan AI: {exc}"[:300])
+    return {"accepted": True}
 
 
 # ---------- interpretasi ----------

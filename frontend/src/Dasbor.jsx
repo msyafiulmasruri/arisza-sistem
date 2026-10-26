@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import AwanKata from "./AwanKata.jsx";
 import { api } from "./api.js";
 import { BarSentimen, NAMA, Pesan, URUTAN, persen, tanggal } from "./util.jsx";
 
@@ -9,20 +10,6 @@ function Kosong({ bukaImpor }) {
       <p>Unggah berkas CSV atau Excel berisi tanggapan pengunjung. Sentimen setiap teks diprediksi otomatis.</p>
       <button onClick={bukaImpor}>Impor data</button>
     </section>
-  );
-}
-
-function AwanKata({ data }) {
-  const maks = Math.max(1, ...data.map((d) => d.jumlah));
-  if (!data.length) return <p className="redup">Belum ada kata.</p>;
-  return (
-    <p className="awan">
-      {data.map((d) => (
-        <span key={d.kata} style={{ fontSize: `${0.85 + (d.jumlah / maks) * 1.5}rem` }} title={`${d.jumlah} kali`}>
-          {d.kata}
-        </span>
-      ))}
-    </p>
   );
 }
 
@@ -38,17 +25,30 @@ function PanelKata({ media }) {
     return () => { batal = true; };
   }, [media]);
 
+  // Canvas digambar ulang bila lebar jendela berubah banyak.
+  const [lebar, setLebar] = useState(Math.round(window.innerWidth / 150));
+  useEffect(() => {
+    let t;
+    const ubah = () => { clearTimeout(t); t = setTimeout(() => setLebar(Math.round(window.innerWidth / 150)), 400); };
+    window.addEventListener("resize", ubah);
+    return () => { window.removeEventListener("resize", ubah); clearTimeout(t); };
+  }, []);
+
   return (
     <section className="blok">
-      <h2>Kata yang sering muncul di {media}</h2>
+      <h2>Word cloud {media}</h2>
+      <p className="redup">Dari teks hasil preprocessing. Semakin besar kata, semakin sering muncul pada sentimen itu.</p>
       <Pesan jenis="galat">{galat}</Pesan>
+      {data?.belum_bersih > 0 && (
+        <Pesan>{data.belum_bersih} teks belum punya hasil preprocessing, jadi belum masuk word cloud. Lengkapi lewat menu Tabel data.</Pesan>
+      )}
       {!data && !galat && <p className="redup">Memuat…</p>}
       {data && (
         <div className="tiga">
           {URUTAN.map((l) => (
-            <div key={l} className={`kolom-awan ${l}`}>
+            <div key={`${media}-${l}-${lebar}`} className={`kolom-awan ${l}`}>
               <h3>{NAMA[l]}</h3>
-              <AwanKata data={data[l]} />
+              <AwanKata data={data[l]} sentimen={l} />
             </div>
           ))}
         </div>

@@ -134,3 +134,30 @@ details summary { cursor: pointer; font-weight: 500; margin-bottom: .75rem; }
   .atas { padding: .8rem 1rem; } .isi { padding: 1rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* word cloud */
+.kanvas-awan { display: block; max-width: 100%; border-radius: 4px; }
+.daftar-kata { margin-top: .5rem; font-size: .85rem; }
+.daftar-kata summary { margin-bottom: .4rem; color: var(--redup); }
+.daftar-kata table { border-collapse: collapse; width: 100%; max-width: 16rem; }
+.daftar-kata th, .daftar-kata td { text-align: left; padding: .15rem .5rem .15rem 0; border-bottom: 1px solid var(--garis); }
+.kolom-awan h3 { margin-bottom: .5rem; }
+
+/* tabel data */
+select { font: inherit; padding: .5rem .6rem; border: 1px solid #9aa8b4; border-radius: 6px; background: #fff; min-width: 11rem; }
+.saring { display: flex; flex-wrap: wrap; gap: 0 1rem; align-items: flex-end; margin-bottom: .75rem; }
+.saring button { margin-bottom: .1rem; }
+.gulung { overflow-x: auto; border: 1px solid var(--garis); border-radius: 6px; }
+.tabel-data { border-collapse: collapse; width: 100%; font-size: .9rem; }
+.tabel-data th { position: sticky; top: 0; background: #e8eef2; text-align: left; font-weight: 600; padding: .55rem .7rem; white-space: nowrap; }
+.tabel-data td { padding: .5rem .7rem; border-top: 1px solid var(--garis); vertical-align: top; }
+.tabel-data .isi-teks { min-width: 16rem; max-width: 28rem; overflow-wrap: anywhere; }
+.tabel-data .angka { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip.s-positive { background: #e1f1e8; border-color: #a9d3bd; color: #1f5a41; }
+.chip.s-neutral { background: #e8ecf0; border-color: #c3ccd5; color: #3d4753; }
+.chip.s-negative { background: #fbe9e7; border-color: #e5b1ab; color: #7a2d26; }
+.halaman { display: flex; gap: 1rem; align-items: center; justify-content: flex-end; margin-top: .75rem; }
+
+/* kemajuan tahap */
+.kemajuan { display: flex; align-items: center; gap: .75rem; margin: .4rem 0; flex-wrap: wrap; }
+.kemajuan progress { width: min(18rem, 100%); height: .7rem; accent-color: var(--aksen); }

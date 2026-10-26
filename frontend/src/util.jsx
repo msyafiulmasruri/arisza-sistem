@@ -9,6 +9,15 @@ export const STATUS = {
 export const tanggal = (x) =>
   x ? new Date(x).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "-";
 
+export function durasi(detik) {
+  if (detik == null) return "-";
+  const d = Math.round(Number(detik));
+  if (d < 60) return `${d} dtk`;
+  const m = Math.floor(d / 60);
+  if (m < 60) return `${m} mnt ${d % 60} dtk`;
+  return `${Math.floor(m / 60)} j ${m % 60} mnt`;
+}
+
 export const persen = (n, total) => (total ? Math.round((n / total) * 1000) / 10 : 0);
 
 export const aktif = (status) => status === "queued" || status === "running";

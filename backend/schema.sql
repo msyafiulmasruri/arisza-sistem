@@ -16,6 +16,7 @@ create table if not exists responses (
   media       text not null,
   text        text not null,
   status      text not null default 'pending' check (status in ('pending','ok','empty')),
+  text_clean  text,
   label       text check (label in ('negative','neutral','positive')),
   confidence  real,
   created_at  timestamptz not null default now()
@@ -46,6 +47,8 @@ create table if not exists interpretation_stages (
   result       text,
   texts_used   int,
   texts_total  int,
+  chunks_done  int not null default 0,
+  chunks_total int,
   duration     real,
   error        text,
   started_at   timestamptz,
