@@ -16,9 +16,10 @@ create table if not exists responses (
   media       text not null,
   text        text not null,
   status      text not null default 'pending' check (status in ('pending','ok','empty')),
-  text_clean  text,
   label       text check (label in ('negative','neutral','positive')),
   confidence  real,
+  clean_text  text,   -- teks hasil preprocessing
+  wc_text     text,   -- teks untuk Word Cloud (tanpa stopword, di-stem)
   created_at  timestamptz not null default now()
 );
 create index if not exists responses_media_idx on responses (media);
@@ -31,6 +32,7 @@ create table if not exists interpretation_runs (
   n_texts         int,
   top_k           int,
   max_new_tokens  int,
+  chunk_size      int,
   catatan         text,
   error           text,
   created_at      timestamptz not null default now(),
@@ -47,13 +49,23 @@ create table if not exists interpretation_stages (
   result       text,
   texts_used   int,
   texts_total  int,
-  chunks_done  int not null default 0,
-  chunks_total int,
   duration     real,
+  chunks_total int,
+  chunks_done  int,
+  detail       jsonb,
   error        text,
   started_at   timestamptz,
   finished_at  timestamptz,
   primary key (run_id, stage)
+);
+
+create table if not exists wordclouds (
+  media       text not null,
+  label       text not null check (label in ('positive','neutral','negative')),
+  image       bytea not null,
+  n_texts     int not null,
+  updated_at  timestamptz not null default now(),
+  primary key (media, label)
 );
 
 -- Disarankan: akun terpisah untuk Space dengan hak terbatas.
@@ -61,4 +73,5 @@ create table if not exists interpretation_stages (
 -- grant select, update on responses to arisza_space;
 -- grant select, update on import_batches to arisza_space;
 -- grant select, update on interpretation_runs, interpretation_stages to arisza_space;
+-- grant select, insert, update, delete on wordclouds to arisza_space;
 -- grant usage, select on all sequences in schema public to arisza_space;

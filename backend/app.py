@@ -7,13 +7,11 @@ import csv
 import hmac
 import io
 import os
-import re
-from collections import Counter
 from contextlib import contextmanager
 
 import httpx
 import psycopg
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 
@@ -29,16 +27,7 @@ MAKS_BARIS_IMPOR = int(os.getenv("MAKS_BARIS_IMPOR", "5000"))
 KOLOM_TEKS = {"text", "teks", "komentar", "ulasan", "review", "comment", "tanggapan", "isi"}
 KOLOM_MEDIA = {"media", "sumber", "platform", "source"}
 TAHAP = ["positive", "neutral", "negative", "saran"]
-STOPWORD = set(
-    "yang dan di ke dari ini itu untuk dengan ada juga tidak nya aja saja sih deh dong lagi sudah udah belum "
-    "bisa sangat atau karena jadi pada dalam kalau kok lah pun akan sama buat yg gak nggak ga tak bukan "
-    "adalah ialah oleh para mereka kami kita saya aku kamu anda dia ia lebih paling sekali banget amat agak "
-    "masih sedang telah pernah hanya cuma mau ingin harus perlu dapat boleh bagi atas bawah antara setelah "
-    "sebelum saat ketika waktu hingga sampai tetapi namun tapi serta lalu kemudian sehingga jika bila supaya "
-    "agar seperti sebagai tentang terhadap dengan yaitu yakni apa siapa kapan dimana bagaimana kenapa mengapa "
-    "berapa mana sini situ sana dulu nanti tadi kini lagi pas dah mah lho loh ya yah nih tuh kan kah pun "
-    "the and for you with this that are was have".split()
-)
+LABEL = {"positive", "neutral", "negative"}
 
 app = FastAPI(title="Arisza Backend")
 app.add_middleware(
@@ -235,7 +224,8 @@ def ringkasan():
             "count(*) filter (where label='positive') as positive, "
             "count(*) filter (where label='neutral') as neutral, "
             "count(*) filter (where label='negative') as negative, "
-            "count(*) filter (where status='pending') as pending "
+            "count(*) filter (where status='pending') as pending, "
+            "count(*) filter (where status='ok' and clean_text is null) as perlu_lengkap "
             "from responses group by media order by media"
         ).fetchall()
         terbaru = {
@@ -247,9 +237,8 @@ def ringkasan():
         selesai = {
             r["media"]: r
             for r in conn.execute(
-                "select distinct on (r.media) r.id, r.media, r.n_texts, r.finished_at, "
-                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik "
-                "from interpretation_runs r where r.status='done' order by r.media, r.id desc"
+                "select distinct on (media) id, media, n_texts, finished_at from interpretation_runs "
+                "where status='done' order by media, id desc"
             ).fetchall()
         }
         for m in media:
@@ -258,8 +247,6 @@ def ringkasan():
                 "status": t["status"] if t else None,
                 "run_id": t["id"] if t else None,
                 "selesai_pada": s["finished_at"] if s else None,
-                "total_detik": float(s["total_detik"]) if s and s["total_detik"] is not None else None,
-                "n_teks": s["n_texts"] if s else None,
                 "ada_hasil": s is not None,
                 # data bertambah sejak interpretasi terakhir
                 "basi": bool(s) and s["n_texts"] != m["total"],
@@ -267,66 +254,88 @@ def ringkasan():
         return media
 
 
-@app.get("/api/media/{media}/words", dependencies=[Depends(admin)])
-def kata(media: str, per_sentimen: int = 60):
-    """Frekuensi kata dari teks hasil preprocessing (text_clean), per sentimen."""
+@app.get("/api/media/{media}/wordclouds", dependencies=[Depends(admin)])
+def info_wordcloud(media: str):
+    """Keterangan Word Cloud yang tersedia (gambarnya diambil lewat endpoint terpisah)."""
     with konek() as conn:
-        baris = conn.execute(
-            "select label, text_clean from responses where media=%s and status='ok' and text_clean is not null limit 50000",
-            (media,),
+        return conn.execute(
+            "select label, n_texts, updated_at from wordclouds where media=%s order by label", (media,)
         ).fetchall()
-        belum = conn.execute(
-            "select count(*) as n from responses where media=%s and status in ('ok','empty') and text_clean is null",
-            (media,),
-        ).fetchone()["n"]
-    hitung = {"positive": Counter(), "neutral": Counter(), "negative": Counter()}
-    for b in baris:
-        for w in re.findall(r"[a-z]{3,}", b["text_clean"].lower()):
-            if w not in STOPWORD:
-                hitung[b["label"]][w] += 1
-    hasil = {l: [{"kata": k, "jumlah": n} for k, n in c.most_common(per_sentimen)] for l, c in hitung.items()}
-    hasil["belum_bersih"] = belum
-    return hasil
 
 
-@app.get("/api/responses", dependencies=[Depends(admin)])
-def tabel(media: str = "", label: str = "", page: int = 1, per_page: int = 25):
-    """Tabel data: teks awal, hasil preprocessing, prediksi sentimen, confidence, media."""
-    per_page = max(1, min(per_page, 100))
-    page = max(1, page)
-    kondisi, param = ["status <> 'pending'"], []
-    if media:
-        kondisi.append("media = %s")
-        param.append(media)
-    if label in ("positive", "neutral", "negative"):
-        kondisi.append("label = %s")
-        param.append(label)
-    elif label == "empty":
-        kondisi.append("status = 'empty'")
-    where = " and ".join(kondisi)
+@app.get("/api/media/{media}/wordcloud/{label}", dependencies=[Depends(admin)])
+def gambar_wordcloud(media: str, label: str):
+    if label not in LABEL:
+        raise HTTPException(404, "Sentimen tidak dikenal.")
     with konek() as conn:
-        total = conn.execute(f"select count(*) as n from responses where {where}", param).fetchone()["n"]
-        baris = conn.execute(
-            f"select id, media, text, text_clean, status, label, confidence from responses where {where} "
-            "order by id limit %s offset %s",
-            param + [per_page, (page - 1) * per_page],
-        ).fetchall()
-        belum = conn.execute(
-            "select count(*) as n from responses where status in ('ok','empty') and text_clean is null"
-            + (" and media = %s" if media else ""),
-            [media] if media else [],
-        ).fetchone()["n"]
-    return {"total": total, "page": page, "per_page": per_page, "rows": baris, "belum_bersih": belum}
+        r = conn.execute("select image from wordclouds where media=%s and label=%s", (media, label)).fetchone()
+    if r is None:
+        raise HTTPException(404, "Word Cloud belum tersedia.")
+    return Response(bytes(r["image"]), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
-@app.post("/api/preprocess", dependencies=[Depends(admin)], status_code=202)
-def lengkapi_preprocess():
-    """Minta Space mengisi teks hasil preprocessing untuk data yang diimpor sebelum fitur ini ada."""
+@app.post("/api/maintenance/lengkapi", dependencies=[Depends(admin)], status_code=202)
+def lengkapi_data_lama():
+    """Minta Space mengisi teks preprocessing dan Word Cloud untuk data lama (label tidak diubah)."""
     try:
-        panggil_space("/jobs/preprocess", {})
+        panggil_space("/jobs/complete", {})
     except Exception as exc:
         raise HTTPException(502, f"Gagal menghubungi layanan AI: {exc}"[:300])
     return {"accepted": True}
+
+
+# ---------- tabel data ----------
+
+def _saring(media, label, q):
+    kondisi, params = [], {}
+    if media:
+        kondisi.append("media = %(media)s")
+        params["media"] = media
+    if label:
+        if label not in LABEL:
+            raise HTTPException(400, "Sentimen harus positive, neutral, atau negative.")
+        kondisi.append("label = %(label)s")
+        params["label"] = label
+    if q:
+        kondisi.append("(text ilike %(q)s or clean_text ilike %(q)s)")
+        params["q"] = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    return ("where " + " and ".join(kondisi)) if kondisi else "", params
+
+
+@app.get("/api/responses", dependencies=[Depends(admin)])
+def tabel(
+    media: str = "", label: str = "", q: str = Query("", max_length=100),
+    halaman: int = Query(1, ge=1), per_halaman: int = Query(25, ge=5, le=100),
+):
+    where, params = _saring(media.strip(), label.strip(), q.strip())
+    with konek() as conn:
+        total = conn.execute(f"select count(*) as n from responses {where}", params).fetchone()["n"]
+        baris = conn.execute(
+            "select id, media, text, clean_text, label, confidence, status from responses "
+            f"{where} order by id limit %(lim)s offset %(off)s",
+            {**params, "lim": per_halaman, "off": (halaman - 1) * per_halaman},
+        ).fetchall()
+    return {"total": total, "halaman": halaman, "per_halaman": per_halaman, "baris": baris}
+
+
+@app.get("/api/responses/export", dependencies=[Depends(admin)])
+def ekspor(media: str = "", label: str = "", q: str = Query("", max_length=100)):
+    where, params = _saring(media.strip(), label.strip(), q.strip())
+    with konek() as conn:
+        baris = conn.execute(
+            "select media, text, clean_text, label, confidence from responses "
+            f"{where} order by id limit 20000",
+            params,
+        ).fetchall()
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["media", "teks_awal", "teks_preprocessing", "sentimen", "confidence"])
+    for b in baris:
+        w.writerow([b["media"], b["text"], b["clean_text"] or "", b["label"] or "", "" if b["confidence"] is None else round(b["confidence"], 4)])
+    return Response(
+        "\ufeff" + out.getvalue(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="tanggapan.csv"'},
+    )
 
 
 # ---------- interpretasi ----------
