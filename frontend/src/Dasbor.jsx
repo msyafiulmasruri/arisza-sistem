@@ -32,6 +32,7 @@ function PanelWordCloud({ media, versi, perluLengkap }) {
           if (!ada) { hasil[l] = null; continue; }
           try {
             const url = await api.gambarWordcloud(media, l);
+            if (batal) { URL.revokeObjectURL(url); continue; } // efek sudah dibersihkan
             alamat.push(url);
             hasil[l] = { url, n: ada.n_texts };
           } catch {
@@ -76,6 +77,12 @@ function PanelWordCloud({ media, versi, perluLengkap }) {
 }
 
 export default function Dasbor({ media, muatUlang, terpilih, setTerpilih, bukaInterpretasi, bukaImpor }) {
+  // Hook harus dipanggil sebelum return lebih awal; bila tidak, React galat
+  // "Rendered more hooks than during the previous render" saat data selesai dimuat.
+  const [sibukLengkap, setSibukLengkap] = useState(false);
+  const [pesanLengkap, setPesanLengkap] = useState("");
+  const [galatLengkap, setGalatLengkap] = useState("");
+
   if (!media) return <p className="redup">Memuat…</p>;
   if (!media.length) return <Kosong bukaImpor={bukaImpor} />;
 
@@ -85,9 +92,6 @@ export default function Dasbor({ media, muatUlang, terpilih, setTerpilih, bukaIn
   );
   const menunggu = media.reduce((a, m) => a + m.pending, 0);
   const perluLengkap = media.reduce((a, m) => a + (m.perlu_lengkap ?? 0), 0);
-  const [sibukLengkap, setSibukLengkap] = useState(false);
-  const [pesanLengkap, setPesanLengkap] = useState("");
-  const [galatLengkap, setGalatLengkap] = useState("");
 
   async function lengkapi() {
     setSibukLengkap(true);
