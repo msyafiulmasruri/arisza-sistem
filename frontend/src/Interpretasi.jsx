@@ -41,8 +41,8 @@ function Tahap({ run }) {
               <details className="rincian">
                 <summary>Rincian waktu</summary>
                 <p className="catatan-kecil">
-                  {t.detail.teks.toLocaleString("id-ID")} teks ({t.detail.unik.toLocaleString("id-ID")} berbeda) dibagi menjadi {t.detail.bagian} bagian,
-                  diproses dalam {t.detail.langkah} langkah. Rata-rata {lama(t.duration / t.detail.langkah)} per langkah.
+                  {(t.detail.teks ?? 0).toLocaleString("id-ID")} teks ({(t.detail.unik ?? 0).toLocaleString("id-ID")} berbeda) dibagi menjadi {t.detail.bagian ?? 1} bagian,
+                  diproses dalam {t.detail.langkah ?? 1} langkah. Rata-rata {lama(t.duration / (t.detail.langkah || 1))} per langkah.
                 </p>
                 {t.detail.detik_bagian?.length > 0 && <p className="catatan-kecil">Merangkum bagian: {t.detail.detik_bagian.map((d) => lama(d)).join(", ")}.</p>}
                 {t.detail.detik_gabung?.length > 0 && <p className="catatan-kecil">Penggabungan: {t.detail.detik_gabung.map((d) => lama(d)).join(", ")}.</p>}
@@ -53,6 +53,36 @@ function Tahap({ run }) {
         );
       })}
     </ol>
+  );
+}
+
+const totalDurasi = (run) => run.tahap.reduce((a, t) => a + (t.status === "done" ? Number(t.duration || 0) : 0), 0);
+
+function WaktuSemuaMedia({ media }) {
+  const baris = media.filter((m) => m.interpretasi.ada_hasil && m.interpretasi.total_detik != null);
+  if (!baris.length) return null;
+  return (
+    <div className="blok">
+      <h2>Waktu pemrosesan Llama per media</h2>
+      <p className="redup">
+        Dari interpretasi terakhir yang selesai pada tiap media. Waktu diukur di Space (CPU) dan tidak termasuk
+        pemuatan model.
+      </p>
+      <div className="gulung">
+        <table className="tabel-data">
+          <thead><tr><th>Media</th><th className="angka">Jumlah teks</th><th className="angka">Total waktu Llama</th></tr></thead>
+          <tbody>
+            {baris.map((m) => (
+              <tr key={m.media}>
+                <td>{m.media}</td>
+                <td className="angka">{(m.interpretasi.n_teks ?? m.total ?? 0).toLocaleString("id-ID")}</td>
+                <td className="angka">{lama(m.interpretasi.total_detik)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -162,8 +192,8 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
             <div className="ai-kepala">
               <span className="chip ai">Dihasilkan AI</span>
               <span className="redup">{selesaiTerbaru ? `Selesai ${tanggal(run.finished_at)}` : `Dimulai ${tanggal(run.created_at)}`}</span>
-              {selesaiTerbaru && run.started_at && run.finished_at && (
-                <span className="redup">Total waktu {lama((new Date(run.finished_at) - new Date(run.started_at)) / 1000)}</span>
+              {totalDurasi(run) > 0 && (
+                <span className="redup">Total waktu Llama: <b>{lama(totalDurasi(run))}</b></span>
               )}
             </div>
             <Tahap run={run} />
@@ -179,6 +209,8 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
             {sebelumnya.catatan && <p className="catatan-kecil">{sebelumnya.catatan}</p>}
           </details>
         )}
+
+        <WaktuSemuaMedia media={media} />
       </section>
     </div>
   );

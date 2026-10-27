@@ -12,7 +12,7 @@ function Kosong({ bukaImpor }) {
   );
 }
 
-function PanelWordCloud({ media, versi, perluLengkap }) {
+function PanelWordCloud({ media, versi, perluLengkap, menunggu }) {
   const [gambar, setGambar] = useState({});
   const [galat, setGalat] = useState("");
   const [memuat, setMemuat] = useState(true);
@@ -66,7 +66,13 @@ function PanelWordCloud({ media, versi, perluLengkap }) {
                   <p className="catatan-kecil">{gambar[l].n.toLocaleString("id-ID")} teks</p>
                 </>
               ) : (
-                <p className="redup">{perluLengkap ? "Belum tersedia. Lengkapi data lama dulu." : "Belum ada teks pada sentimen ini."}</p>
+                <p className="redup">
+                  {menunggu
+                    ? "Menunggu prediksi sentimen selesai…"
+                    : perluLengkap
+                      ? "Belum tersedia. Lengkapi data lama dulu."
+                      : "Belum ada teks pada sentimen ini."}
+                </p>
               )}
             </figure>
           ))}
@@ -158,7 +164,14 @@ export default function Dasbor({ media, muatUlang, terpilih, setTerpilih, bukaIn
         </ul>
       </section>
 
-      {terpilih && dipilih && <PanelWordCloud media={terpilih} versi={`${dipilih.total}:${dipilih.pending}:${dipilih.perlu_lengkap ?? 0}`} perluLengkap={(dipilih.perlu_lengkap ?? 0) > 0} />}
+      {terpilih && dipilih && (
+        <PanelWordCloud
+          media={terpilih}
+          versi={`${dipilih.total}:${dipilih.pending}:${dipilih.perlu_lengkap ?? 0}`}
+          perluLengkap={(dipilih.perlu_lengkap ?? 0) > 0}
+          menunggu={(dipilih.pending ?? 0) > 0}
+        />
+      )}
     </>
   );
 }

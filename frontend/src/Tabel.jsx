@@ -81,6 +81,7 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
           <select id="t-label" value={label} onChange={(e) => setLabel(e.target.value)}>
             <option value="">Semua sentimen</option>
             {Object.entries(NAMA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            <option value="empty">Kosong setelah preprocessing</option>
           </select>
         </div>
         <div className="lebar">
@@ -110,6 +111,7 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
             <table className="tabel-data">
               <thead>
                 <tr>
+                  <th scope="col">No</th>
                   <th scope="col">Media</th>
                   <th scope="col">Teks awal</th>
                   <th scope="col">Teks hasil preprocessing</th>
@@ -118,13 +120,15 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
                 </tr>
               </thead>
               <tbody>
-                {data.baris.map((b) => (
+                {data.baris.map((b, i) => (
                   <tr key={b.id}>
+                    <td>{awal + i}</td>
                     <td>{b.media}</td>
                     <td className="teks">{b.text}</td>
                     <td className="teks">{b.clean_text ?? <span className="redup">belum tersedia</span>}</td>
                     <td>
                       {b.label ? <span className={`chip s-${b.label}`}>{NAMA[b.label]}</span>
+                        : b.status === "empty" ? <span className="chip">Kosong</span>
                         : <span className="redup">{b.status === "pending" ? "menunggu" : "—"}</span>}
                     </td>
                     <td className="angka">{b.confidence == null ? "—" : b.confidence.toFixed(4)}</td>

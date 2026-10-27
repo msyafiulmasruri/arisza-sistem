@@ -225,7 +225,7 @@ def ringkasan():
             "count(*) filter (where label='neutral') as neutral, "
             "count(*) filter (where label='negative') as negative, "
             "count(*) filter (where status='pending') as pending, "
-            "count(*) filter (where status='ok' and clean_text is null) as perlu_lengkap "
+            "count(*) filter (where status='ok' and (clean_text is null or wc_text is null)) as perlu_lengkap "
             "from responses group by media order by media"
         ).fetchall()
         terbaru = {
@@ -237,8 +237,9 @@ def ringkasan():
         selesai = {
             r["media"]: r
             for r in conn.execute(
-                "select distinct on (media) id, media, n_texts, finished_at from interpretation_runs "
-                "where status='done' order by media, id desc"
+                "select distinct on (r.media) r.id, r.media, r.n_texts, r.finished_at, "
+                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik "
+                "from interpretation_runs r where r.status='done' order by r.media, r.id desc"
             ).fetchall()
         }
         for m in media:
@@ -247,6 +248,8 @@ def ringkasan():
                 "status": t["status"] if t else None,
                 "run_id": t["id"] if t else None,
                 "selesai_pada": s["finished_at"] if s else None,
+                "total_detik": float(s["total_detik"]) if s and s["total_detik"] is not None else None,
+                "n_teks": s["n_texts"] if s else None,
                 "ada_hasil": s is not None,
                 # data bertambah sejak interpretasi terakhir
                 "basi": bool(s) and s["n_texts"] != m["total"],
@@ -292,10 +295,13 @@ def _saring(media, label, q):
         kondisi.append("media = %(media)s")
         params["media"] = media
     if label:
-        if label not in LABEL:
-            raise HTTPException(400, "Sentimen harus positive, neutral, atau negative.")
-        kondisi.append("label = %(label)s")
-        params["label"] = label
+        if label == "empty":
+            kondisi.append("status = 'empty'")
+        elif label in LABEL:
+            kondisi.append("label = %(label)s")
+            params["label"] = label
+        else:
+            raise HTTPException(400, "Sentimen harus positive, neutral, negative, atau empty.")
     if q:
         kondisi.append("(text ilike %(q)s or clean_text ilike %(q)s)")
         params["q"] = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
