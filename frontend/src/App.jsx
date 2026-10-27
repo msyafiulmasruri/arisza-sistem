@@ -43,8 +43,8 @@ function Masuk({ onMasuk }) {
 
 const TAB = [
   ["dasbor", "Dasbor"],
-  ["interpretasi", "Interpretasi"],
   ["tabel", "Tabel data"],
+  ["interpretasi", "Interpretasi"],
   ["impor", "Impor data"],
 ];
 
@@ -95,9 +95,9 @@ export default function App() {
       </header>
       <main className="isi">
         <Pesan jenis="galat">{galat}</Pesan>
-        {tab === "dasbor" && <Dasbor media={media} terpilih={terpilih} setTerpilih={setTerpilih} bukaInterpretasi={(m) => { setTerpilih(m); setTab("interpretasi"); }} bukaImpor={() => setTab("impor")} />}
+        {tab === "dasbor" && <Dasbor media={media} muatUlang={muat} terpilih={terpilih} setTerpilih={setTerpilih} bukaInterpretasi={(m) => { setTerpilih(m); setTab("interpretasi"); }} bukaImpor={() => setTab("impor")} />}
+        {tab === "tabel" && <Tabel media={media} terpilih={terpilih} bukaImpor={() => setTab("impor")} />}
         {tab === "interpretasi" && <Interpretasi media={media} terpilih={terpilih} setTerpilih={setTerpilih} muatUlang={muat} bukaImpor={() => setTab("impor")} />}
-        {tab === "tabel" && <Tabel media={media} terpilih={terpilih} />}
         {tab === "impor" && <Impor muatUlang={muat} />}
       </main>
       <footer className="kaki">

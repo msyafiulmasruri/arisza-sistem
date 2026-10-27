@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import AwanKata from "./AwanKata.jsx";
 import { api } from "./api.js";
 import { BarSentimen, NAMA, Pesan, URUTAN, persen, tanggal } from "./util.jsx";
 
@@ -13,43 +12,62 @@ function Kosong({ bukaImpor }) {
   );
 }
 
-function PanelKata({ media }) {
-  const [data, setData] = useState(null);
+function PanelWordCloud({ media, versi, perluLengkap }) {
+  const [gambar, setGambar] = useState({});
   const [galat, setGalat] = useState("");
+  const [memuat, setMemuat] = useState(true);
 
   useEffect(() => {
     let batal = false;
-    setData(null);
+    const alamat = [];
+    setGambar({});
     setGalat("");
-    api.kata(media).then((d) => !batal && setData(d)).catch((e) => !batal && setGalat(e.message));
-    return () => { batal = true; };
-  }, [media]);
-
-  // Canvas digambar ulang bila lebar jendela berubah banyak.
-  const [lebar, setLebar] = useState(Math.round(window.innerWidth / 150));
-  useEffect(() => {
-    let t;
-    const ubah = () => { clearTimeout(t); t = setTimeout(() => setLebar(Math.round(window.innerWidth / 150)), 400); };
-    window.addEventListener("resize", ubah);
-    return () => { window.removeEventListener("resize", ubah); clearTimeout(t); };
-  }, []);
+    setMemuat(true);
+    (async () => {
+      try {
+        const daftar = await api.infoWordcloud(media);
+        const hasil = {};
+        for (const l of URUTAN) {
+          const ada = daftar.find((d) => d.label === l);
+          if (!ada) { hasil[l] = null; continue; }
+          try {
+            const url = await api.gambarWordcloud(media, l);
+            alamat.push(url);
+            hasil[l] = { url, n: ada.n_texts };
+          } catch {
+            hasil[l] = null;
+          }
+        }
+        if (!batal) setGambar(hasil);
+      } catch (e) {
+        if (!batal) setGalat(e.message);
+      } finally {
+        if (!batal) setMemuat(false);
+      }
+    })();
+    return () => { batal = true; alamat.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [media, versi]);
 
   return (
     <section className="blok">
-      <h2>Word cloud {media}</h2>
-      <p className="redup">Dari teks hasil preprocessing. Semakin besar kata, semakin sering muncul pada sentimen itu.</p>
+      <h2>Word Cloud {media}</h2>
+      <p className="redup">Kata yang paling sering muncul pada tiap sentimen, dibuat dari teks hasil preprocessing tanpa stopword.</p>
       <Pesan jenis="galat">{galat}</Pesan>
-      {data?.belum_bersih > 0 && (
-        <Pesan>{data.belum_bersih} teks belum punya hasil preprocessing, jadi belum masuk word cloud. Lengkapi lewat menu Tabel data.</Pesan>
-      )}
-      {!data && !galat && <p className="redup">Memuat…</p>}
-      {data && (
+      {memuat && <p className="redup">Memuat…</p>}
+      {!memuat && !galat && (
         <div className="tiga">
           {URUTAN.map((l) => (
-            <div key={`${media}-${l}-${lebar}`} className={`kolom-awan ${l}`}>
-              <h3>{NAMA[l]}</h3>
-              <AwanKata data={data[l]} sentimen={l} />
-            </div>
+            <figure key={l} className={`kolom-awan ${l}`}>
+              <figcaption><h3>{NAMA[l]}</h3></figcaption>
+              {gambar[l] ? (
+                <>
+                  <img className="wc" src={gambar[l].url} alt={`Word Cloud sentimen ${NAMA[l].toLowerCase()} pada ${media}`} />
+                  <p className="catatan-kecil">{gambar[l].n.toLocaleString("id-ID")} teks</p>
+                </>
+              ) : (
+                <p className="redup">{perluLengkap ? "Belum tersedia. Lengkapi data lama dulu." : "Belum ada teks pada sentimen ini."}</p>
+              )}
+            </figure>
           ))}
         </div>
       )}
@@ -57,7 +75,7 @@ function PanelKata({ media }) {
   );
 }
 
-export default function Dasbor({ media, terpilih, setTerpilih, bukaInterpretasi, bukaImpor }) {
+export default function Dasbor({ media, muatUlang, terpilih, setTerpilih, bukaInterpretasi, bukaImpor }) {
   if (!media) return <p className="redup">Memuat…</p>;
   if (!media.length) return <Kosong bukaImpor={bukaImpor} />;
 
@@ -66,6 +84,25 @@ export default function Dasbor({ media, terpilih, setTerpilih, bukaInterpretasi,
     { total: 0, positive: 0, neutral: 0, negative: 0 }
   );
   const menunggu = media.reduce((a, m) => a + m.pending, 0);
+  const perluLengkap = media.reduce((a, m) => a + (m.perlu_lengkap ?? 0), 0);
+  const [sibukLengkap, setSibukLengkap] = useState(false);
+  const [pesanLengkap, setPesanLengkap] = useState("");
+  const [galatLengkap, setGalatLengkap] = useState("");
+
+  async function lengkapi() {
+    setSibukLengkap(true);
+    setGalatLengkap("");
+    try {
+      await api.lengkapi();
+      setPesanLengkap("Permintaan diterima. Layanan AI sedang melengkapi data; muat ulang halaman beberapa saat lagi.");
+      setTimeout(muatUlang, 15000);
+    } catch (e) {
+      setGalatLengkap(e.message);
+    } finally {
+      setSibukLengkap(false);
+    }
+  }
+  const dipilih = media.find((m) => m.media === terpilih);
 
   return (
     <>
@@ -74,6 +111,14 @@ export default function Dasbor({ media, terpilih, setTerpilih, bukaInterpretasi,
           <h1>{jumlah.total.toLocaleString("id-ID")} tanggapan dianalisis</h1>
           <p className="redup">dari {media.length} media digital</p>
           <Pesan>{menunggu ? `${menunggu} teks sedang diprediksi.` : ""}</Pesan>
+          {perluLengkap > 0 && (
+            <div className="pesan">
+              {perluLengkap.toLocaleString("id-ID")} teks lama belum punya hasil preprocessing dan Word Cloud.{" "}
+              <button className="kecil" onClick={lengkapi} disabled={sibukLengkap}>{sibukLengkap ? "Mengirim…" : "Lengkapi data lama"}</button>
+            </div>
+          )}
+          <Pesan>{pesanLengkap}</Pesan>
+          <Pesan jenis="galat">{galatLengkap}</Pesan>
         </div>
         <div className="besar">
           <BarSentimen data={jumlah} />
@@ -103,13 +148,13 @@ export default function Dasbor({ media, terpilih, setTerpilih, bukaInterpretasi,
                 </span>
                 <button className="kecil" onClick={() => bukaInterpretasi(m.media)}>Lihat interpretasi</button>
               </div>
-              {m.total < 50 && m.total > 0 && <p className="catatan-kecil">Hanya {m.total} teks, jadi hasilnya gambaran awal.</p>}
+              {m.total < 50 && m.total > 0 && <p className="catatan-kecil">Hanya {m.total} teks, jadi pola yang terlihat belum tentu mewakili.</p>}
             </li>
           ))}
         </ul>
       </section>
 
-      {terpilih && <PanelKata media={terpilih} />}
+      {terpilih && dipilih && <PanelWordCloud media={terpilih} versi={`${dipilih.total}:${dipilih.pending}:${dipilih.perlu_lengkap ?? 0}`} perluLengkap={(dipilih.perlu_lengkap ?? 0) > 0} />}
     </>
   );
 }

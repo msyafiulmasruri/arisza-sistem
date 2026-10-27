@@ -36,16 +36,51 @@ async function minta(path, { method = "GET", body, kunci } = {}) {
   return res.json();
 }
 
+// Gambar dan berkas membutuhkan header kunci, jadi diambil lewat fetch lalu dijadikan alamat sementara.
+async function mintaBerkas(path) {
+  let res;
+  try {
+    res = await fetch(BASE + path, { headers: { "X-Admin-Key": sessionStorage.getItem(KUNCI) ?? "" } });
+  } catch {
+    throw new GalatApi("Backend tidak dapat dihubungi. Periksa alamat backend dan koneksi internet.", 0);
+  }
+  if (!res.ok) {
+    let pesan = `Permintaan gagal (${res.status}).`;
+    try {
+      const j = await res.json();
+      if (typeof j.detail === "string") pesan = j.detail;
+    } catch {}
+    throw new GalatApi(pesan, res.status);
+  }
+  return res.blob();
+}
+
+const qs = (o) => {
+  const p = new URLSearchParams();
+  Object.entries(o).forEach(([k, v]) => v !== "" && v != null && p.set(k, v));
+  const t = p.toString();
+  return t ? `?${t}` : "";
+};
+
 export const api = {
   masuk: (kunci) => minta("/api/auth", { kunci }),
   ringkasan: () => minta("/api/summary"),
-  kata: (media) => minta(`/api/media/${encodeURIComponent(media)}/words`),
+  infoWordcloud: (media) => minta(`/api/media/${encodeURIComponent(media)}/wordclouds`),
+  gambarWordcloud: async (media, label) =>
+    URL.createObjectURL(await mintaBerkas(`/api/media/${encodeURIComponent(media)}/wordcloud/${label}`)),
+  tabel: (f) => minta(`/api/responses${qs(f)}`),
+  unduhCsv: async (f) => {
+    const blob = await mintaBerkas(`/api/responses/export${qs(f)}`);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "tanggapan.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  },
+  lengkapi: () => minta("/api/maintenance/lengkapi", { method: "POST" }),
   interpretasi: (media) => minta(`/api/media/${encodeURIComponent(media)}/interpretation`),
   jalankan: (media) => minta(`/api/media/${encodeURIComponent(media)}/interpret`, { method: "POST" }),
   ulangiRun: (id) => minta(`/api/runs/${id}/retry`, { method: "POST" }),
-  tabel: ({ media = "", label = "", page = 1, perPage = 25 }) =>
-    minta(`/api/responses?media=${encodeURIComponent(media)}&label=${label}&page=${page}&per_page=${perPage}`),
-  lengkapiPreprocess: () => minta("/api/preprocess", { method: "POST" }),
   batch: () => minta("/api/batches"),
   ulangiBatch: (id) => minta(`/api/batches/${id}/retry`, { method: "POST" }),
   impor: (berkas, mediaBawaan) => {
