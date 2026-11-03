@@ -9,12 +9,33 @@ const TAHAP = [
   ["saran", "Saran tindak lanjut"],
 ];
 
+function DaftarFrekuensi({ judul, daftar }) {
+  if (!daftar?.length) return <p className="catatan-kecil">Tidak ada kata atau frasa yang memenuhi kriteria.</p>;
+  return (
+    <div className="gulung">
+      <h4>{judul}</h4>
+      <table className="tabel-data">
+        <thead><tr><th>{judul === "Kata yang sering muncul" ? "Kata" : "Frasa"}</th><th className="angka">Kemunculan</th></tr></thead>
+        <tbody>
+          {daftar.map((item) => (
+            <tr key={item.teks}>
+              <td>{item.teks}</td>
+              <td className="angka">{Number(item.frekuensi || 0).toLocaleString("id-ID")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Tahap({ run }) {
   const per = Object.fromEntries(run.tahap.map((t) => [t.stage, t]));
   return (
     <ol className="tahap">
       {TAHAP.map(([id, judul]) => {
         const t = per[id];
+        if (!t) return null;
         return (
           <li key={id} className={`t-${t.status}`}>
             <div className="t-kepala">
@@ -22,31 +43,35 @@ function Tahap({ run }) {
               <span className="chip">{STATUS[t.status]}</span>
               {t.status === "done" && t.duration > 0 && <span className="redup">{lama(t.duration)}</span>}
               {id !== "saran" && t.status === "done" && t.texts_total > 0 && (
-                <span className="redup">seluruh {t.texts_total.toLocaleString("id-ID")} teks dibaca</span>
+                <span className="redup">{t.texts_total.toLocaleString("id-ID")} tanggapan dianalisis</span>
               )}
             </div>
             {t.status === "running" && (
               <div className="proses">
                 <p className="redup">
-                  {t.chunks_total
-                    ? `Llama sedang membaca dan merangkum: langkah ${t.chunks_done ?? 0} dari ${t.chunks_total}`
-                    : `Llama sedang menyusun ${judul.toLowerCase()}…`}
+                  {id === "saran"
+                    ? "Llama sedang menyusun saran tindak lanjut…"
+                    : "Llama sedang menyusun pola opini berdasarkan frekuensi kata dan frasa…"}
                 </p>
-                {t.chunks_total > 0 && <progress max={t.chunks_total} value={t.chunks_done ?? 0} aria-label={`Kemajuan ${judul}`} />}
               </div>
             )}
             {t.status === "failed" && <Pesan jenis="galat">{t.error}</Pesan>}
             {t.status === "done" && <p className="hasil">{t.result}</p>}
-            {t.status === "done" && t.detail && (
+            {t.status === "done" && id !== "saran" && t.detail?.metode === "frekuensi_v1" && (
               <details className="rincian">
-                <summary>Rincian waktu</summary>
+                <summary>Lihat kata dan frasa yang dianalisis</summary>
                 <p className="catatan-kecil">
-                  {(t.detail.teks ?? 0).toLocaleString("id-ID")} teks ({(t.detail.unik ?? 0).toLocaleString("id-ID")} berbeda) dibagi menjadi {t.detail.bagian ?? 1} bagian,
-                  diproses dalam {t.detail.langkah ?? 1} langkah. Rata-rata {lama(t.duration / (t.detail.langkah || 1))} per langkah.
+                  Penghitungan dilakukan terhadap {(t.detail.jumlah_tanggapan ?? t.texts_total ?? 0).toLocaleString("id-ID")} tanggapan.
+                  Angka menunjukkan jumlah kemunculan kata atau frasa, bukan jumlah pengunjung yang berbeda.
                 </p>
-                {t.detail.detik_bagian?.length > 0 && <p className="catatan-kecil">Merangkum bagian: {t.detail.detik_bagian.map((d) => lama(d)).join(", ")}.</p>}
-                {t.detail.detik_gabung?.length > 0 && <p className="catatan-kecil">Penggabungan: {t.detail.detik_gabung.map((d) => lama(d)).join(", ")}.</p>}
-                {t.detail.detik_akhir != null && <p className="catatan-kecil">Penyusunan paragraf akhir: {lama(t.detail.detik_akhir)}.</p>}
+                <DaftarFrekuensi judul="Kata yang sering muncul" daftar={t.detail.kata} />
+                <DaftarFrekuensi judul="Frasa yang sering muncul" daftar={t.detail.frasa} />
+                {t.detail.waktu_penghitungan != null && (
+                  <p className="catatan-kecil">Waktu penghitungan Python: {durasiRinci(t.detail.waktu_penghitungan)}.</p>
+                )}
+                {!t.detail.llama_dipanggil && (
+                  <p className="catatan-kecil">Llama tidak dipanggil karena tidak tersedia kata atau frasa yang cukup untuk diinterpretasikan.</p>
+                )}
               </details>
             )}
           </li>
@@ -57,6 +82,9 @@ function Tahap({ run }) {
 }
 
 const totalDurasi = (run) => run.tahap.reduce((a, t) => a + (t.status === "done" ? Number(t.duration || 0) : 0), 0);
+const durasiRinci = (detik) => Number(detik) < 1
+  ? `${Number(detik).toFixed(2).replace(".", ",")} detik`
+  : lama(detik);
 
 function WaktuSemuaMedia({ media }) {
   const baris = media.filter((m) => m.interpretasi.ada_hasil && m.interpretasi.total_detik != null);
@@ -180,8 +208,8 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
 
         <Pesan jenis="galat">{galat}</Pesan>
         {data?.menunggu_prediksi > 0 && <Pesan>Prediksi sentimen untuk {data.menunggu_prediksi} teks masih berjalan. Interpretasi bisa dimulai setelah selesai.</Pesan>}
-        {info?.interpretasi.basi && !jalan && <Pesan>Ada data baru sejak interpretasi terakhir. Perbarui agar hasil sesuai data terbaru.</Pesan>}
-        {jalan && <Pesan>Proses berjalan di layanan AI dan tersimpan di basis data. Halaman ini boleh ditutup; hasil tetap ada saat dibuka lagi. Seluruh teks dibaca bertahap, jadi proses bisa memakan waktu cukup lama, terutama untuk media dengan banyak teks.</Pesan>}
+        {info?.interpretasi.basi && !jalan && <Pesan>Interpretasi belum menggunakan metode frekuensi kata dan frasa terbaru atau terdapat data baru. Jalankan ulang agar hasil diperbarui.</Pesan>}
+        {jalan && <Pesan>Proses berjalan di layanan AI dan tersimpan di basis data. Python menghitung kata dan frasa yang sering muncul, kemudian Llama menyusun pola opini serta saran tindak lanjut. Halaman ini boleh ditutup; hasil tetap tersedia saat dibuka kembali.</Pesan>}
         {gagal && <Pesan jenis="galat">{run.error}</Pesan>}
 
         {!data && !galat && <p className="redup">Memuat…</p>}

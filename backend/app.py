@@ -238,7 +238,9 @@ def ringkasan():
             r["media"]: r
             for r in conn.execute(
                 "select distinct on (r.media) r.id, r.media, r.n_texts, r.finished_at, "
-                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik "
+                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik, "
+                "(select count(*) = 4 and bool_and(coalesce(s.detail->>'metode' = 'frekuensi_v1', false)) "
+                " from interpretation_stages s where s.run_id = r.id) as metode_frekuensi "
                 "from interpretation_runs r where r.status='done' order by r.media, r.id desc"
             ).fetchall()
         }
@@ -252,7 +254,7 @@ def ringkasan():
                 "n_teks": s["n_texts"] if s else None,
                 "ada_hasil": s is not None,
                 # data bertambah sejak interpretasi terakhir
-                "basi": bool(s) and s["n_texts"] != m["total"],
+                "basi": bool(s) and (s["n_texts"] != m["total"] or not s["metode_frekuensi"]),
             }
         return media
 
