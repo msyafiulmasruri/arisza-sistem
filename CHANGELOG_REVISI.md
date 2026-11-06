@@ -33,3 +33,14 @@
 - Pemeriksaan statis kontrak schema, migrasi, backend, dan frontend.
 - Smoke test API autentikasi dengan database tiruan: login salah ditolak, login benar menghasilkan token, dan token dapat digunakan untuk endpoint pengguna aktif.
 - Build frontend Vite belum dijalankan karena dependensi npm tidak tersedia di lingkungan kerja ini. Pengujian langsung ke Neon dan deployment Vercel/Hugging Face tetap perlu dilakukan pada lingkungan deployment pengguna.
+
+## Persiapan development lokal
+
+- Menambahkan `uvicorn[standard]` dan `python-dotenv` ke dependensi backend agar FastAPI dapat dijalankan lokal dan membaca `.env` melalui `--env-file`.
+- Menambahkan pemuatan `backend/.env` pada `create_user.py`, sehingga akun dapat dibuat dari terminal tanpa menempelkan `DATABASE_URL` secara manual.
+- Menambahkan `python-dotenv` dan `uvicorn[standard]` ke dependensi AI Service serta panduan pemasangan PyTorch CPU terpisah.
+- Menambahkan `test-ai/.env.example` untuk konfigurasi API key, Neon, dan token Hugging Face.
+- Menyesuaikan `backend/.env.example` agar mengarah ke AI Service lokal pada `127.0.0.1:7860`.
+- Menambahkan dan memperluas `.gitignore` untuk mengecualikan `.venv`, `venv`, `node_modules`, `.env`, cache Python, hasil build, bobot model, dan file sementara. File `.env.example` tetap dapat di-commit.
+- Memperbarui `.dockerignore` agar rahasia dan artefak development lokal tidak ikut masuk ke image AI Service.
+- Memperbarui README utama dan README AI Service dengan panduan setup lokal untuk frontend, backend, dan AI Service, termasuk opsi tetap menggunakan Hugging Face Spaces.

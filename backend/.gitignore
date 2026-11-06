@@ -1,2 +1,16 @@
-__pycache__/
+# Environment dan rahasia
 .env
+.env.*
+!.env.example
+
+# Python lokal
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/

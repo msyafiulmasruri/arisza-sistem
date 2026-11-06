@@ -6,8 +6,13 @@ import getpass
 import os
 import re
 import sys
+from pathlib import Path
 
 import psycopg
+from dotenv import load_dotenv
+
+# Muat konfigurasi backend/.env untuk penggunaan lokal; environment yang sudah ada tetap diprioritaskan.
+load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
 
 from security import hash_password
 

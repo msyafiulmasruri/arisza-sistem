@@ -1,12 +1,69 @@
-# bobot model (disimpan di Hugging Face Hub, bukan di repo)
+# ==============================
+# Environment dan rahasia
+# ==============================
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# ==============================
+# Python / virtual environment
+# ==============================
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+
+# ==============================
+# Node / Vite
+# ==============================
+node_modules/
+.frontend-cache/
+.vite/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==============================
+# Model dan cache unduhan
+# ==============================
 *.pt
 *.pth
 *.safetensors
 *.bin
 *.ckpt
+.cache/
+hf_cache/
 
-# umum
-__pycache__/
-.env
-node_modules/
-dist/
+# ==============================
+# Editor dan sistem operasi
+# ==============================
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log dan file sementara
+*.log
+*.tmp
+*.bak
