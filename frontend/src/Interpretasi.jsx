@@ -195,7 +195,7 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
           </div>
           <div className="aksi">
             {gagal ? (
-              <button disabled={tidakBisa} onClick={() => mulai(() => api.ulangiRun(run.id))}>
+              <button disabled={tidakBisa} onClick={() => mulai(() => api.ulangiInterpretasi(run.id))}>
                 {sibuk ? "Mengirim…" : "Ulangi dari tahap yang gagal"}
               </button>
             ) : (

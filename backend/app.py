@@ -74,28 +74,28 @@ def tandai_macet(conn):
     ids = [
         r["id"]
         for r in conn.execute(
-            "update interpretation_runs set status='failed', error=%s, updated_at=now() "
+            "update interpretations set status='failed', error=%s, updated_at=now() "
             "where status in ('queued','running') and updated_at < now() - make_interval(mins => %s) returning id",
             (pesan, BATAS_MACET_MENIT),
         ).fetchall()
     ]
     if ids:
         conn.execute(
-            "update interpretation_stages set status='failed', error=%s where run_id = any(%s) and status='running'",
+            "update interpretation_results set status='failed', error=%s where interpretation_id = any(%s) and status='running'",
             (pesan, ids),
         )
     conn.execute(
-        "update import_batches set status='failed', error=%s, updated_at=now() "
+        "update batches set status='failed', error=%s, updated_at=now() "
         "where status in ('queued','running') and updated_at < now() - make_interval(mins => %s)",
         (pesan, BATAS_MACET_MENIT),
     )
 
 
-def muat_run(conn, run_id):
-    run = conn.execute("select * from interpretation_runs where id=%s", (run_id,)).fetchone()
+def muat_interpretasi(conn, interpretation_id):
+    run = conn.execute("select * from interpretations where id=%s", (interpretation_id,)).fetchone()
     if run is None:
         return None
-    tahap = conn.execute("select * from interpretation_stages where run_id=%s", (run_id,)).fetchall()
+    tahap = conn.execute("select * from interpretation_results where interpretation_id=%s", (interpretation_id,)).fetchall()
     run["tahap"] = sorted(tahap, key=lambda t: TAHAP.index(t["stage"]))
     return run
 
@@ -167,7 +167,7 @@ async def impor(file: UploadFile = File(...), media_bawaan: str = Form("")):
             raise HTTPException(400, f"Maksimal {MAKS_BARIS_IMPOR} baris per berkas; bagi berkas menjadi beberapa bagian.")
 
         batch = conn.execute(
-            "insert into import_batches (filename, total) values (%s, %s) returning id", (file.filename, len(data))
+            "insert into batches (filename, total) values (%s, %s) returning id", (file.filename, len(data))
         ).fetchone()
         with conn.cursor() as cur:
             cur.executemany(
@@ -175,7 +175,7 @@ async def impor(file: UploadFile = File(...), media_bawaan: str = Form("")):
                 [(batch["id"], m, t) for m, t in data],
             )
         kirim_batch(conn, batch["id"])
-        return conn.execute("select * from import_batches where id=%s", (batch["id"],)).fetchone()
+        return conn.execute("select * from batches where id=%s", (batch["id"],)).fetchone()
 
 
 def kirim_batch(conn, batch_id):
@@ -183,7 +183,7 @@ def kirim_batch(conn, batch_id):
         panggil_space("/jobs/classify", {"batch_id": batch_id})
     except Exception as exc:
         conn.execute(
-            "update import_batches set status='failed', error=%s, updated_at=now() where id=%s",
+            "update batches set status='failed', error=%s, updated_at=now() where id=%s",
             (f"Gagal menghubungi layanan AI: {exc}"[:500], batch_id),
         )
 
@@ -194,7 +194,7 @@ def daftar_batch():
         tandai_macet(conn)
         return conn.execute(
             "select b.*, count(r.id) filter (where r.status<>'pending') as diproses "
-            "from import_batches b left join responses r on r.batch_id=b.id "
+            "from batches b left join responses r on r.batch_id=b.id "
             "group by b.id order by b.id desc limit 10"
         ).fetchall()
 
@@ -202,14 +202,14 @@ def daftar_batch():
 @app.post("/api/batches/{batch_id}/retry", dependencies=[Depends(admin)], status_code=202)
 def ulangi_batch(batch_id: int):
     with konek() as conn:
-        b = conn.execute("select status from import_batches where id=%s", (batch_id,)).fetchone()
+        b = conn.execute("select status from batches where id=%s", (batch_id,)).fetchone()
         if b is None:
             raise HTTPException(404, "Batch tidak ditemukan.")
         if b["status"] != "failed":
             raise HTTPException(409, "Hanya batch yang gagal yang bisa diulang.")
-        conn.execute("update import_batches set status='queued', error=null, updated_at=now() where id=%s", (batch_id,))
+        conn.execute("update batches set status='queued', error=null, updated_at=now() where id=%s", (batch_id,))
         kirim_batch(conn, batch_id)
-        return conn.execute("select * from import_batches where id=%s", (batch_id,)).fetchone()
+        return conn.execute("select * from batches where id=%s", (batch_id,)).fetchone()
 
 
 # ---------- dasbor ----------
@@ -231,24 +231,24 @@ def ringkasan():
         terbaru = {
             r["media"]: r
             for r in conn.execute(
-                "select distinct on (media) id, media, status, error from interpretation_runs order by media, id desc"
+                "select distinct on (media) id, media, status, error from interpretations order by media, id desc"
             ).fetchall()
         }
         selesai = {
             r["media"]: r
             for r in conn.execute(
                 "select distinct on (r.media) r.id, r.media, r.n_texts, r.finished_at, "
-                "(select sum(s.duration) from interpretation_stages s where s.run_id = r.id) as total_detik, "
+                "(select sum(s.duration) from interpretation_results s where s.interpretation_id = r.id) as total_detik, "
                 "(select count(*) = 4 and bool_and(coalesce(s.detail->>'metode' = 'frekuensi_v1', false)) "
-                " from interpretation_stages s where s.run_id = r.id) as metode_frekuensi "
-                "from interpretation_runs r where r.status='done' order by r.media, r.id desc"
+                " from interpretation_results s where s.interpretation_id = r.id) as metode_frekuensi "
+                "from interpretations r where r.status='done' order by r.media, r.id desc"
             ).fetchall()
         }
         for m in media:
             t, s = terbaru.get(m["media"]), selesai.get(m["media"])
             m["interpretasi"] = {
                 "status": t["status"] if t else None,
-                "run_id": t["id"] if t else None,
+                "interpretation_id": t["id"] if t else None,
                 "selesai_pada": s["finished_at"] if s else None,
                 "total_detik": float(s["total_detik"]) if s and s["total_detik"] is not None else None,
                 "n_teks": s["n_texts"] if s else None,
@@ -352,9 +352,9 @@ def ekspor(media: str = "", label: str = "", q: str = Query("", max_length=100))
 def interpretasi(media: str):
     with konek() as conn:
         tandai_macet(conn)
-        t = conn.execute("select id from interpretation_runs where media=%s order by id desc limit 1", (media,)).fetchone()
+        t = conn.execute("select id from interpretations where media=%s order by id desc limit 1", (media,)).fetchone()
         s = conn.execute(
-            "select id from interpretation_runs where media=%s and status='done' order by id desc limit 1", (media,)
+            "select id from interpretations where media=%s and status='done' order by id desc limit 1", (media,)
         ).fetchone()
         jumlah = conn.execute(
             "select count(*) filter (where status='ok') as total, count(*) filter (where status='pending') as pending "
@@ -362,20 +362,20 @@ def interpretasi(media: str):
             (media,),
         ).fetchone()
         return {
-            "terbaru": muat_run(conn, t["id"]) if t else None,
-            "terakhir_selesai": muat_run(conn, s["id"]) if s else None,
+            "terbaru": muat_interpretasi(conn, t["id"]) if t else None,
+            "terakhir_selesai": muat_interpretasi(conn, s["id"]) if s else None,
             "jumlah_teks": jumlah["total"],
             "menunggu_prediksi": jumlah["pending"],
         }
 
 
-def kirim_run(conn, run_id):
+def kirim_interpretasi(conn, interpretation_id):
     try:
-        panggil_space("/jobs/interpret", {"run_id": run_id})
+        panggil_space("/jobs/interpret", {"interpretation_id": interpretation_id})
     except Exception as exc:
         conn.execute(
-            "update interpretation_runs set status='failed', error=%s, updated_at=now() where id=%s",
-            (f"Gagal menghubungi layanan AI: {exc}"[:500], run_id),
+            "update interpretations set status='failed', error=%s, updated_at=now() where id=%s",
+            (f"Gagal menghubungi layanan AI: {exc}"[:500], interpretation_id),
         )
 
 
@@ -393,36 +393,36 @@ def jalankan_interpretasi(media: str):
         if jumlah["pending"] > 0:
             raise HTTPException(409, "Prediksi sentimen untuk data impor masih berjalan. Tunggu sampai selesai.")
         aktif = conn.execute(
-            "select id from interpretation_runs where media=%s and status in ('queued','running')", (media,)
+            "select id from interpretations where media=%s and status in ('queued','running')", (media,)
         ).fetchone()
         if aktif:
             raise HTTPException(409, "Interpretasi untuk media ini sedang diproses.")
-        run = conn.execute("insert into interpretation_runs (media) values (%s) returning id", (media,)).fetchone()
+        run = conn.execute("insert into interpretations (media) values (%s) returning id", (media,)).fetchone()
         with conn.cursor() as cur:
             cur.executemany(
-                "insert into interpretation_stages (run_id, stage) values (%s, %s)", [(run["id"], t) for t in TAHAP]
+                "insert into interpretation_results (interpretation_id, stage) values (%s, %s)", [(run["id"], t) for t in TAHAP]
             )
-        kirim_run(conn, run["id"])
-        return muat_run(conn, run["id"])
+        kirim_interpretasi(conn, run["id"])
+        return muat_interpretasi(conn, run["id"])
 
 
-@app.post("/api/runs/{run_id}/retry", dependencies=[Depends(admin)], status_code=202)
-def ulangi_run(run_id: int):
+@app.post("/api/interpretations/{interpretation_id}/retry", dependencies=[Depends(admin)], status_code=202)
+def ulangi_interpretasi(interpretation_id: int):
     with konek() as conn:
-        run = conn.execute("select media, status from interpretation_runs where id=%s", (run_id,)).fetchone()
+        run = conn.execute("select media, status from interpretations where id=%s", (interpretation_id,)).fetchone()
         if run is None:
             raise HTTPException(404, "Pekerjaan tidak ditemukan.")
         if run["status"] != "failed":
             raise HTTPException(409, "Hanya pekerjaan yang gagal yang bisa diulang.")
         aktif = conn.execute(
-            "select id from interpretation_runs where media=%s and status in ('queued','running')", (run["media"],)
+            "select id from interpretations where media=%s and status in ('queued','running')", (run["media"],)
         ).fetchone()
         if aktif:
             raise HTTPException(409, "Interpretasi untuk media ini sedang diproses.")
         conn.execute(
-            "update interpretation_stages set status='waiting', error=null where run_id=%s and status in ('failed','running')",
-            (run_id,),
+            "update interpretation_results set status='waiting', error=null where interpretation_id=%s and status in ('failed','running')",
+            (interpretation_id,),
         )
-        conn.execute("update interpretation_runs set status='queued', error=null, updated_at=now() where id=%s", (run_id,))
-        kirim_run(conn, run_id)
-        return muat_run(conn, run_id)
+        conn.execute("update interpretations set status='queued', error=null, updated_at=now() where id=%s", (interpretation_id,))
+        kirim_interpretasi(conn, interpretation_id)
+        return muat_interpretasi(conn, interpretation_id)

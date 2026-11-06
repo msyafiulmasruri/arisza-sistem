@@ -1,76 +1,78 @@
--- Jalankan sekali di Neon (SQL Editor).
+-- Skema PostgreSQL untuk sistem analisis sentimen Arisza Library & Learning.
+-- Untuk database baru: jalankan file ini sekali melalui SQL Editor Neon.
+-- Untuk database lama: jalankan migrasi_penamaan_tabel.sql terlebih dahulu.
 
-create table if not exists import_batches (
-  id          serial primary key,
-  filename    text not null,
-  total       int  not null default 0,
-  status      text not null default 'queued' check (status in ('queued','running','done','failed')),
-  error       text,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS batches (
+    id          SERIAL PRIMARY KEY,
+    filename    TEXT NOT NULL,
+    total       INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'queued'
+                CHECK (status IN ('queued', 'running', 'done', 'failed')),
+    error       TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create table if not exists responses (
-  id          bigserial primary key,
-  batch_id    int references import_batches(id) on delete cascade,
-  media       text not null,
-  text        text not null,
-  status      text not null default 'pending' check (status in ('pending','ok','empty')),
-  label       text check (label in ('negative','neutral','positive')),
-  confidence  real,
-  clean_text  text,   -- teks hasil preprocessing
-  wc_text     text,   -- teks untuk Word Cloud (tanpa stopword, di-stem)
-  created_at  timestamptz not null default now()
-);
-create index if not exists responses_media_idx on responses (media);
-create index if not exists responses_batch_idx on responses (batch_id, status);
-
-create table if not exists interpretation_runs (
-  id              serial primary key,
-  media           text not null,
-  status          text not null default 'queued' check (status in ('queued','running','done','failed')),
-  n_texts         int,
-  top_words       int default 10,
-  top_phrases     int default 10,
-  max_new_pola    int default 220,
-  max_new_saran   int default 280,
-  catatan         text,
-  error           text,
-  created_at      timestamptz not null default now(),
-  started_at      timestamptz,
-  finished_at     timestamptz,
-  updated_at      timestamptz not null default now()
-);
-create index if not exists runs_media_idx on interpretation_runs (media, id desc);
-
-create table if not exists interpretation_stages (
-  run_id       int not null references interpretation_runs(id) on delete cascade,
-  stage        text not null check (stage in ('positive','neutral','negative','saran')),
-  status       text not null default 'waiting' check (status in ('waiting','running','done','failed')),
-  result       text,
-  texts_used   int,
-  texts_total  int,
-  duration     real,
-  detail       jsonb,
-  error        text,
-  started_at   timestamptz,
-  finished_at  timestamptz,
-  primary key (run_id, stage)
+CREATE TABLE IF NOT EXISTS responses (
+    id          BIGSERIAL PRIMARY KEY,
+    batch_id    INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+    media       TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'ok', 'empty')),
+    label       TEXT CHECK (label IN ('negative', 'neutral', 'positive')),
+    confidence  REAL,
+    clean_text  TEXT,
+    wc_text     TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create table if not exists wordclouds (
-  media       text not null,
-  label       text not null check (label in ('positive','neutral','negative')),
-  image       bytea not null,
-  n_texts     int not null,
-  updated_at  timestamptz not null default now(),
-  primary key (media, label)
+CREATE INDEX IF NOT EXISTS responses_media_idx ON responses (media);
+CREATE INDEX IF NOT EXISTS responses_batch_idx ON responses (batch_id, status);
+
+CREATE TABLE IF NOT EXISTS interpretations (
+    id              SERIAL PRIMARY KEY,
+    media           TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued', 'running', 'done', 'failed')),
+    n_texts         INTEGER,
+    top_words       INTEGER DEFAULT 10,
+    top_phrases     INTEGER DEFAULT 10,
+    max_new_pola    INTEGER DEFAULT 220,
+    max_new_saran   INTEGER DEFAULT 280,
+    catatan         TEXT,
+    error           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Disarankan: akun terpisah untuk Space dengan hak terbatas.
--- create role arisza_space login password 'GANTI_DENGAN_KATA_SANDI_KUAT';
--- grant select, update on responses to arisza_space;
--- grant select, update on import_batches to arisza_space;
--- grant select, update on interpretation_runs, interpretation_stages to arisza_space;
--- grant select, insert, update, delete on wordclouds to arisza_space;
--- grant usage, select on all sequences in schema public to arisza_space;
+CREATE INDEX IF NOT EXISTS interpretations_media_idx ON interpretations (media, id DESC);
+
+CREATE TABLE IF NOT EXISTS interpretation_results (
+    interpretation_id INTEGER NOT NULL
+                       REFERENCES interpretations(id) ON DELETE CASCADE,
+    stage             TEXT NOT NULL
+                      CHECK (stage IN ('positive', 'neutral', 'negative', 'saran')),
+    status            TEXT NOT NULL DEFAULT 'waiting'
+                      CHECK (status IN ('waiting', 'running', 'done', 'failed')),
+    result            TEXT,
+    texts_used        INTEGER,
+    texts_total       INTEGER,
+    duration          REAL,
+    detail            JSONB,
+    error             TEXT,
+    started_at        TIMESTAMPTZ,
+    finished_at       TIMESTAMPTZ,
+    PRIMARY KEY (interpretation_id, stage)
+);
+
+CREATE TABLE IF NOT EXISTS wordclouds (
+    media       TEXT NOT NULL,
+    label       TEXT NOT NULL CHECK (label IN ('positive', 'neutral', 'negative')),
+    image       BYTEA NOT NULL,
+    n_texts     INTEGER NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (media, label)
+);

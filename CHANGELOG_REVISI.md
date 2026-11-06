@@ -1,27 +1,29 @@
 # Catatan Revisi Sistem Arisza
 
-## Interpretasi berbasis frekuensi dan pembaruan database
+## Penyesuaian nama tabel dan relasi database
 
-### Perubahan kode
-- Python menghitung frekuensi kata dan frasa dua sampai tiga kata per media dan kategori sentimen.
-- Maksimal 10 kata dan 10 frasa teratas dikirimkan kepada Llama 3.2 untuk menyusun pola opini.
-- Llama menyusun saran tindak lanjut berdasarkan pola opini yang tersedia.
-- Kata negasi dipertahankan saat penghitungan.
-- Rincian kata, frasa, frekuensi, batas pengambilan, dan waktu penghitungan disimpan pada JSONB `interpretation_stages.detail`.
-- Jalur pengujian langsung dan jalur pekerjaan sistem web menggunakan fungsi penghitungan yang sama.
+### Nama tabel baru
+- `import_batches` diubah menjadi `batches`.
+- `responses` tetap digunakan.
+- `interpretation_runs` diubah menjadi `interpretations`.
+- `interpretation_stages` diubah menjadi `interpretation_results`.
+- `wordclouds` tetap digunakan.
+- Kolom `run_id` pada `interpretation_results` diubah menjadi `interpretation_id`.
 
-### Perubahan database
-- `interpretation_runs`: menggunakan `top_words`, `top_phrases`, `max_new_pola`, dan `max_new_saran`.
-- `interpretation_stages`: tidak lagi menggunakan `chunks_total` dan `chunks_done`.
-- Kolom lama `top_k`, `chunk_size`, `max_new_tokens`, `chunks_total`, dan `chunks_done` dihapus melalui `backend/migrasi_3.sql`.
-- Tidak ada tabel yang dihapus atau dibuat baru untuk perubahan ini.
-- Nilai konfigurasi keluaran untuk run lama dibiarkan NULL karena versi sebelumnya hanya menyimpan satu nilai gabungan, bukan batas pola dan saran secara terpisah.
+### Perubahan kode aplikasi
+- Skema PostgreSQL pada `backend/schema.sql` diperbarui sesuai lima nama tabel baru.
+- Query backend FastAPI dan AI Service disesuaikan dengan nama tabel serta kolom baru.
+- Permintaan pekerjaan interpretasi ke AI Service kini menggunakan `interpretation_id`.
+- Endpoint pengulangan interpretasi pada backend dan frontend diselaraskan menggunakan `/api/interpretations/{interpretation_id}/retry`.
+- README utama dan README AI Service diperbarui sesuai struktur database terbaru.
 
-### File SQL
-- Database baru: jalankan `backend/schema.sql` di neon.
+### Migrasi database
+- `backend/migrasi_penamaan_tabel.sql` disediakan untuk database lama.
+- Migrasi mengganti nama tabel, kolom, sequence, dan indeks yang relevan tanpa menghapus data.
+- Database baru cukup menggunakan `backend/schema.sql`.
+- Database lama perlu di-backup, menghentikan sementara proses aplikasi, menjalankan migrasi penamaan, kemudian menjalankan skema terbaru.
 
-### Pengujian
-- 8 pengujian unit frekuensi dan interpretasi menggunakan generator Llama tiruan.
-- 4 pengujian statis skema dan migrasi database.
-- Pemeriksaan sintaks Python berhasil.
-- Pengujian langsung ke Neon, model Llama di Hugging Face Spaces, dan build frontend Vite belum dilakukan dalam lingkungan ini.
+### Pengujian yang dilakukan
+- Pemeriksaan sintaks Python dengan `compileall` berhasil.
+- 19 pengujian unit pada folder `test-ai/tests` berhasil dijalankan.
+- Pengujian langsung ke database Neon, deployment Hugging Face Spaces/Vercel, dan build frontend Vite belum dilakukan dalam lingkungan ini.
