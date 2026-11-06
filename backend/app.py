@@ -7,6 +7,7 @@ import csv
 import io
 import os
 import re
+import time
 from contextlib import contextmanager
 
 import httpx
@@ -79,13 +80,41 @@ def get_current_user(authorization: str = Header(default="")):
 
 def panggil_space(path, payload):
     if not SPACE_URL or not SPACE_API_KEY:
-        raise RuntimeError("SPACE_URL atau SPACE_API_KEY belum diatur di backend.")
+        raise RuntimeError("SPACE_URL atau SPACE_API_KEY belum diatur di backend Vercel.")
     headers = {"X-API-Key": SPACE_API_KEY}
     if HF_SPACE_TOKEN:
         headers["Authorization"] = f"Bearer {HF_SPACE_TOKEN}"
-    # Space yang tertidur butuh waktu bangun, jadi batas waktunya longgar.
-    r = httpx.post(f"{SPACE_URL}{path}", json=payload, headers=headers, timeout=90)
-    r.raise_for_status()
+
+    # Ulangi koneksi singkat untuk mengatasi Space yang baru bangun/restart.
+    # Permintaan ke endpoint jobs hanya mendaftarkan pekerjaan dan seharusnya cepat.
+    url = f"{SPACE_URL}{path}"
+    for percobaan in range(2):
+        try:
+            r = httpx.post(
+                url, json=payload, headers=headers,
+                timeout=httpx.Timeout(8.0, connect=3.0),
+            )
+            if r.status_code in (502, 503, 504) and percobaan < 1:
+                time.sleep(1)
+                continue
+            r.raise_for_status()
+            return
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            if percobaan < 1:
+                time.sleep(1)
+                continue
+            raise RuntimeError(
+                f"Tidak dapat terhubung ke AI Service ({SPACE_URL}). "
+                "Pastikan Space sudah Running, URL SPACE_URL benar (https://NAMA-SPACE.hf.space), "
+                "dan aplikasi di Space mendengarkan port 7860. Periksa Logs/Container logs Hugging Face. "
+                f"Detail koneksi: {type(exc).__name__}: {exc}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            isi = (exc.response.text or "").strip().replace("\n", " ")[:250]
+            raise RuntimeError(
+                f"AI Service mengembalikan HTTP {exc.response.status_code}. "
+                f"Periksa API_KEY, akses Space, dan log layanan. Respons: {isi}"
+            ) from exc
 
 
 def tandai_macet(conn):

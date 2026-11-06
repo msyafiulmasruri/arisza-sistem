@@ -1,8 +1,19 @@
 # Catatan Revisi Sistem Arisza
 
+## Revisi konfigurasi AI Service dan koneksi production
+
+- Parameter model dan batas pemrosesan dipindahkan dari Environment Variables ke `test-ai/app/config.py` sebagai konfigurasi tetap: model Llama 3.2 3B Instruct, dtype bfloat16, 10 kata, 10 frasa, 220 token pola opini, 280 token saran, maksimal 200 teks per permintaan, batch 16, dan 50 riwayat pekerjaan.
+- `test-ai/.env.example` kini hanya memuat tiga secrets yang diperlukan: `API_KEY`, `DATABASE_URL`, dan `HF_TOKEN`.
+- Pengunduhan bobot Hybrid menggunakan `HF_TOKEN` bila repository Model Hub bersifat private.
+- Bobot Hybrid IndoBERT-BiLSTM tidak lagi diunduh/dimuat pada saat startup FastAPI. Model dimuat saat klasifikasi pertama diminta melalui `LazyHybridService`.
+- Kegagalan pemuatan Hybrid dicatat di log dan dapat dicoba kembali pada permintaan berikutnya. Endpoint `/health` tetap dapat merespons selama proses pemuatan model belum berhasil.
+- Endpoint `/health` menampilkan status pemuatan Hybrid (`not_loaded`, `loaded`, atau `load_failed`) dan status pemuatan Llama.
+- Backend melakukan percobaan ulang singkat untuk koneksi sementara ke Hugging Face Space dan memberikan pesan diagnostik yang lebih jelas untuk kegagalan koneksi atau respons HTTP.
+- README utama dan README AI Service diperbarui agar sesuai dengan arsitektur production: frontend dan backend di Vercel, AI Service di Hugging Face Spaces, model Hybrid dan Llama diunduh dari Model Hub, serta PostgreSQL di Neon.
+
 ## Autentikasi akun email dan kata sandi
 
-- Login frontend kini meminta email dan kata sandi.
+- Login frontend meminta email dan kata sandi.
 - Backend memverifikasi akun pada tabel `users`.
 - Password disimpan dalam bentuk PBKDF2-HMAC-SHA256 hash melalui skrip `backend/create_user.py`.
 - Backend menerbitkan token akses bertanda tangan HMAC; frontend menyimpannya sementara di `sessionStorage` dan mengirimkannya melalui `Authorization: Bearer`.
@@ -25,22 +36,9 @@
 - `backend/create_user.py` membuat akun, mengaitkan data lama yang belum memiliki `user_id` dengan akun pertama, lalu menetapkan `user_id` menjadi `NOT NULL`.
 - Backup database wajib dibuat sebelum migrasi.
 
-## Pengujian yang dilakukan
+## Pengujian
 
-- Pengujian unit untuk hashing password dan validasi token akses.
-- Pemeriksaan sintaks Python.
-- Pengujian unit AI Service.
-- Pemeriksaan statis kontrak schema, migrasi, backend, dan frontend.
-- Smoke test API autentikasi dengan database tiruan: login salah ditolak, login benar menghasilkan token, dan token dapat digunakan untuk endpoint pengguna aktif.
-- Build frontend Vite belum dijalankan karena dependensi npm tidak tersedia di lingkungan kerja ini. Pengujian langsung ke Neon dan deployment Vercel/Hugging Face tetap perlu dilakukan pada lingkungan deployment pengguna.
-
-## Persiapan development lokal
-
-- Menambahkan `uvicorn[standard]` dan `python-dotenv` ke dependensi backend agar FastAPI dapat dijalankan lokal dan membaca `.env` melalui `--env-file`.
-- Menambahkan pemuatan `backend/.env` pada `create_user.py`, sehingga akun dapat dibuat dari terminal tanpa menempelkan `DATABASE_URL` secara manual.
-- Menambahkan `python-dotenv` dan `uvicorn[standard]` ke dependensi AI Service serta panduan pemasangan PyTorch CPU terpisah.
-- Menambahkan `test-ai/.env.example` untuk konfigurasi API key, Neon, dan token Hugging Face.
-- Menyesuaikan `backend/.env.example` agar mengarah ke AI Service lokal pada `127.0.0.1:7860`.
-- Menambahkan dan memperluas `.gitignore` untuk mengecualikan `.venv`, `venv`, `node_modules`, `.env`, cache Python, hasil build, bobot model, dan file sementara. File `.env.example` tetap dapat di-commit.
-- Memperbarui `.dockerignore` agar rahasia dan artefak development lokal tidak ikut masuk ke image AI Service.
-- Memperbarui README utama dan README AI Service dengan panduan setup lokal untuk frontend, backend, dan AI Service, termasuk opsi tetap menggunakan Hugging Face Spaces.
+- Pengujian unit AI Service: 25 pengujian lulus pada lingkungan kerja ini.
+- Pengujian mencakup konfigurasi tetap, pemuatan Hybrid tertunda, percobaan ulang setelah kegagalan pemuatan, frekuensi kata/frasa, interpretasi, dan kontrak database.
+- Pemeriksaan sintaks Python dilakukan setelah perubahan.
+- Koneksi langsung ke Neon, pengunduhan bobot model, pemuatan Llama di Hugging Face Spaces, dan pengujian deployment Vercel/Hugging Face tetap perlu dilakukan pada lingkungan production pengguna.
