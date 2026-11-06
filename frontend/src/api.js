@@ -1,9 +1,11 @@
 const BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
-const KUNCI = "arisza_admin_key";
+const TOKEN_KEY = "arisza_access_token";
+// Bersihkan password lama yang pernah disimpan langsung pada versi autentikasi sebelumnya.
+sessionStorage.removeItem("arisza_admin_key");
 
-export const simpanKunci = (k) => sessionStorage.setItem(KUNCI, k);
-export const hapusKunci = () => sessionStorage.removeItem(KUNCI);
-export const adaKunci = () => !!sessionStorage.getItem(KUNCI);
+export const simpanToken = (token) => sessionStorage.setItem(TOKEN_KEY, token);
+export const hapusToken = () => sessionStorage.removeItem(TOKEN_KEY);
+export const adaToken = () => !!sessionStorage.getItem(TOKEN_KEY);
 
 export class GalatApi extends Error {
   constructor(pesan, status) {
@@ -12,8 +14,10 @@ export class GalatApi extends Error {
   }
 }
 
-async function minta(path, { method = "GET", body, kunci } = {}) {
-  const headers = { "X-Admin-Key": kunci ?? sessionStorage.getItem(KUNCI) ?? "" };
+async function minta(path, { method = "GET", body, auth = true } = {}) {
+  const headers = {};
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  if (auth && token) headers.Authorization = `Bearer ${token}`;
   if (body && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
   let res;
   try {
@@ -36,11 +40,13 @@ async function minta(path, { method = "GET", body, kunci } = {}) {
   return res.json();
 }
 
-// Gambar dan berkas membutuhkan header kunci, jadi diambil lewat fetch lalu dijadikan alamat sementara.
+// Gambar dan berkas membutuhkan header autentikasi, jadi diambil melalui fetch.
 async function mintaBerkas(path) {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
   let res;
   try {
-    res = await fetch(BASE + path, { headers: { "X-Admin-Key": sessionStorage.getItem(KUNCI) ?? "" } });
+    res = await fetch(BASE + path, { headers });
   } catch {
     throw new GalatApi("Backend tidak dapat dihubungi. Periksa alamat backend dan koneksi internet.", 0);
   }
@@ -63,7 +69,10 @@ const qs = (o) => {
 };
 
 export const api = {
-  masuk: (kunci) => minta("/api/auth", { kunci }),
+  masuk: (email, password) => minta("/api/auth/login", {
+    method: "POST", body: { email, password }, auth: false,
+  }),
+  penggunaAktif: () => minta("/api/auth/me"),
   ringkasan: () => minta("/api/summary"),
   infoWordcloud: (media) => minta(`/api/media/${encodeURIComponent(media)}/wordclouds`),
   gambarWordcloud: async (media, label) =>

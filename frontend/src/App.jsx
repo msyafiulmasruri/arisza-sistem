@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, adaKunci, hapusKunci, simpanKunci } from "./api.js";
+import { api, adaToken, hapusToken, simpanToken } from "./api.js";
 import { Pesan, aktif, useBerkala } from "./util.jsx";
 import Dasbor from "./Dasbor.jsx";
 import Interpretasi from "./Interpretasi.jsx";
@@ -7,6 +7,7 @@ import Impor from "./Impor.jsx";
 import Tabel from "./Tabel.jsx";
 
 function Masuk({ onMasuk }) {
+  const [email, setEmail] = useState("");
   const [sandi, setSandi] = useState("");
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState(false);
@@ -16,8 +17,8 @@ function Masuk({ onMasuk }) {
     setSibuk(true);
     setGalat("");
     try {
-      await api.masuk(sandi);
-      simpanKunci(sandi);
+      const hasil = await api.masuk(email, sandi);
+      simpanToken(hasil.access_token);
       onMasuk();
     } catch (err) {
       setGalat(err.message);
@@ -30,11 +31,15 @@ function Masuk({ onMasuk }) {
     <main className="masuk">
       <h1>Arisza Library &amp; Learning</h1>
       <p className="sub">Masuk untuk melihat analisis sentimen tanggapan pengunjung.</p>
+      <p className="catatan-kecil">Akun dibuat oleh pengelola sistem.</p>
       <form onSubmit={kirim}>
+        <label htmlFor="email">Email</label>
+        <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+          autoComplete="username" maxLength={254} required />
         <label htmlFor="sandi">Kata sandi</label>
         <input id="sandi" type="password" value={sandi} onChange={(e) => setSandi(e.target.value)}
           autoComplete="current-password" required />
-        <button disabled={sibuk || !sandi}>{sibuk ? "Memeriksa…" : "Masuk"}</button>
+        <button disabled={sibuk || !email.trim() || !sandi}>{sibuk ? "Memeriksa…" : "Masuk"}</button>
         <Pesan jenis="galat">{galat}</Pesan>
       </form>
     </main>
@@ -49,7 +54,7 @@ const TAB = [
 ];
 
 export default function App() {
-  const [masuk, setMasuk] = useState(adaKunci());
+  const [masuk, setMasuk] = useState(adaToken());
   const [tab, setTab] = useState("dasbor");
   const [media, setMedia] = useState(null); // null = belum dimuat
   const [galat, setGalat] = useState("");
@@ -63,7 +68,7 @@ export default function App() {
       setTerpilih((s) => s || data[0]?.media || "");
     } catch (err) {
       if (err.status === 401) {
-        hapusKunci();
+        hapusToken();
         setMasuk(false);
       } else setGalat(err.message);
     }
@@ -91,7 +96,7 @@ export default function App() {
               onClick={() => setTab(id)}>{label}</button>
           ))}
         </nav>
-        <button className="tautan" onClick={() => { hapusKunci(); setMasuk(false); }}>Keluar</button>
+        <button className="tautan" onClick={() => { hapusToken(); setMasuk(false); setMedia(null); }}>Keluar</button>
       </header>
       <main className="isi">
         <Pesan jenis="galat">{galat}</Pesan>

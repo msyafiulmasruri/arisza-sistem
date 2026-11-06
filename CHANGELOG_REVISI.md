@@ -1,29 +1,35 @@
 # Catatan Revisi Sistem Arisza
 
-## Penyesuaian nama tabel dan relasi database
+## Autentikasi akun email dan kata sandi
 
-### Nama tabel baru
-- `import_batches` diubah menjadi `batches`.
-- `responses` tetap digunakan.
-- `interpretation_runs` diubah menjadi `interpretations`.
-- `interpretation_stages` diubah menjadi `interpretation_results`.
-- `wordclouds` tetap digunakan.
-- Kolom `run_id` pada `interpretation_results` diubah menjadi `interpretation_id`.
+- Login frontend kini meminta email dan kata sandi.
+- Backend memverifikasi akun pada tabel `users`.
+- Password disimpan dalam bentuk PBKDF2-HMAC-SHA256 hash melalui skrip `backend/create_user.py`.
+- Backend menerbitkan token akses bertanda tangan HMAC; frontend menyimpannya sementara di `sessionStorage` dan mengirimkannya melalui `Authorization: Bearer`.
+- `ADMIN_PASSWORD` dan header `X-Admin-Key` dihapus dari mekanisme autentikasi.
+- `SESSION_SECRET` menjadi secret backend untuk menandatangani token, bukan password login.
+- Token berlaku 12 jam secara default; logout menghapus token dari sesi browser.
 
-### Perubahan kode aplikasi
-- Skema PostgreSQL pada `backend/schema.sql` diperbarui sesuai lima nama tabel baru.
-- Query backend FastAPI dan AI Service disesuaikan dengan nama tabel serta kolom baru.
-- Permintaan pekerjaan interpretasi ke AI Service kini menggunakan `interpretation_id`.
-- Endpoint pengulangan interpretasi pada backend dan frontend diselaraskan menggunakan `/api/interpretations/{interpretation_id}/retry`.
-- README utama dan README AI Service diperbarui sesuai struktur database terbaru.
+## Penyesuaian database
 
-### Migrasi database
-- `backend/migrasi_penamaan_tabel.sql` disediakan untuk database lama.
-- Migrasi mengganti nama tabel, kolom, sequence, dan indeks yang relevan tanpa menghapus data.
-- Database baru cukup menggunakan `backend/schema.sql`.
-- Database lama perlu di-backup, menghentikan sementara proses aplikasi, menjalankan migrasi penamaan, kemudian menjalankan skema terbaru.
+- Ditambahkan tabel `users` dengan kolom `id`, `email`, `password_hash`, dan `created_at`.
+- Ditambahkan `user_id` pada tabel `batches` dan `interpretations`.
+- Relasi yang diterapkan: `users` 1:N `batches`; `users` 1:N `interpretations`; `batches` 1:N `responses`; `interpretations` 1:N `interpretation_results`.
+- `wordclouds` tetap menggunakan primary key gabungan `media` dan `label` tanpa foreign key langsung.
+- Seluruh akun terdaftar menggunakan ruang data analisis bersama. `user_id` mencatat akun yang membuat proses impor dan interpretasi; belum ada pemisahan data per akun atau pembagian hak akses berbasis peran.
 
-### Pengujian yang dilakukan
-- Pemeriksaan sintaks Python dengan `compileall` berhasil.
-- 19 pengujian unit pada folder `test-ai/tests` berhasil dijalankan.
-- Pengujian langsung ke database Neon, deployment Hugging Face Spaces/Vercel, dan build frontend Vite belum dilakukan dalam lingkungan ini.
+## Migrasi database
+
+- `backend/schema.sql` digunakan untuk database baru.
+- `backend/migrasi_penamaan_tabel.sql` digunakan pada database lama untuk mengganti nama tabel, membuat tabel `users`, dan menambahkan kolom `user_id` sementara dalam kondisi nullable.
+- `backend/create_user.py` membuat akun, mengaitkan data lama yang belum memiliki `user_id` dengan akun pertama, lalu menetapkan `user_id` menjadi `NOT NULL`.
+- Backup database wajib dibuat sebelum migrasi.
+
+## Pengujian yang dilakukan
+
+- Pengujian unit untuk hashing password dan validasi token akses.
+- Pemeriksaan sintaks Python.
+- Pengujian unit AI Service.
+- Pemeriksaan statis kontrak schema, migrasi, backend, dan frontend.
+- Smoke test API autentikasi dengan database tiruan: login salah ditolak, login benar menghasilkan token, dan token dapat digunakan untuk endpoint pengguna aktif.
+- Build frontend Vite belum dijalankan karena dependensi npm tidak tersedia di lingkungan kerja ini. Pengujian langsung ke Neon dan deployment Vercel/Hugging Face tetap perlu dilakukan pada lingkungan deployment pengguna.

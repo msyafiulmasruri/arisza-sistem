@@ -4,19 +4,23 @@ Tugasnya tipis: menerima impor, mencatat permintaan di PostgreSQL, memanggil lay
 Hugging Face Space, lalu membaca hasil dari basis data. Model tidak dijalankan di sini.
 """
 import csv
-import hmac
 import io
 import os
+import re
 from contextlib import contextmanager
 
 import httpx
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
+from security import create_access_token, verify_access_token, verify_password
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "43200"))
 SPACE_URL = os.getenv("SPACE_URL", "").rstrip("/")
 SPACE_API_KEY = os.getenv("SPACE_API_KEY", "")
 HF_SPACE_TOKEN = os.getenv("HF_SPACE_TOKEN", "")
@@ -37,11 +41,9 @@ app.add_middleware(
 
 # ---------- dasar ----------
 
-def admin(x_admin_key: str = Header(default="")):
-    if not ADMIN_PASSWORD:
-        raise HTTPException(503, "ADMIN_PASSWORD belum diatur di backend.")
-    if not hmac.compare_digest(x_admin_key.encode(), ADMIN_PASSWORD.encode()):
-        raise HTTPException(401, "Kata sandi salah.")
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=1024)
 
 
 @contextmanager
@@ -55,6 +57,24 @@ def konek():
         yield conn
     finally:
         conn.close()
+
+
+def get_current_user(authorization: str = Header(default="")):
+    if not SESSION_SECRET or len(SESSION_SECRET) < 32:
+        raise HTTPException(503, "SESSION_SECRET belum diatur atau kurang dari 32 karakter.")
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(401, "Sesi tidak ditemukan. Silakan login kembali.")
+    payload = verify_access_token(token.strip(), SESSION_SECRET)
+    if payload is None:
+        raise HTTPException(401, "Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
+    with konek() as conn:
+        user = conn.execute(
+            "select id, email from users where id=%s", (int(payload["sub"]),)
+        ).fetchone()
+    if user is None:
+        raise HTTPException(401, "Akun tidak ditemukan. Silakan login kembali.")
+    return user
 
 
 def panggil_space(path, payload):
@@ -107,9 +127,31 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/api/auth", dependencies=[Depends(admin)])
-def auth():
-    return {"ok": True}
+@app.post("/api/auth/login")
+def login(body: LoginRequest):
+    if not SESSION_SECRET or len(SESSION_SECRET) < 32:
+        raise HTTPException(503, "SESSION_SECRET belum diatur atau kurang dari 32 karakter.")
+    email = body.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(401, "Email atau kata sandi tidak sesuai.")
+    with konek() as conn:
+        user = conn.execute(
+            "select id, email, password_hash from users where email=%s", (email,)
+        ).fetchone()
+    if user is None or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Email atau kata sandi tidak sesuai.")
+    token = create_access_token(user["id"], user["email"], SESSION_SECRET, SESSION_TTL_SECONDS)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": SESSION_TTL_SECONDS,
+        "user": {"id": user["id"], "email": user["email"]},
+    }
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(get_current_user)):
+    return {"id": user["id"], "email": user["email"]}
 
 
 # ---------- impor ----------
@@ -135,8 +177,11 @@ def rapikan_media(nama):
     return " ".join(str(nama).split())
 
 
-@app.post("/api/import", dependencies=[Depends(admin)], status_code=202)
-async def impor(file: UploadFile = File(...), media_bawaan: str = Form("")):
+@app.post("/api/import", status_code=202)
+async def impor(
+    file: UploadFile = File(...), media_bawaan: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
     baris = baca_berkas(file.filename, await file.read())
     if len(baris) < 2:
         raise HTTPException(400, "Berkas kosong atau hanya berisi judul kolom.")
@@ -167,7 +212,8 @@ async def impor(file: UploadFile = File(...), media_bawaan: str = Form("")):
             raise HTTPException(400, f"Maksimal {MAKS_BARIS_IMPOR} baris per berkas; bagi berkas menjadi beberapa bagian.")
 
         batch = conn.execute(
-            "insert into batches (filename, total) values (%s, %s) returning id", (file.filename, len(data))
+            "insert into batches (user_id, filename, total) values (%s, %s, %s) returning id",
+            (user["id"], file.filename, len(data)),
         ).fetchone()
         with conn.cursor() as cur:
             cur.executemany(
@@ -188,7 +234,7 @@ def kirim_batch(conn, batch_id):
         )
 
 
-@app.get("/api/batches", dependencies=[Depends(admin)])
+@app.get("/api/batches", dependencies=[Depends(get_current_user)])
 def daftar_batch():
     with konek() as conn:
         tandai_macet(conn)
@@ -199,7 +245,7 @@ def daftar_batch():
         ).fetchall()
 
 
-@app.post("/api/batches/{batch_id}/retry", dependencies=[Depends(admin)], status_code=202)
+@app.post("/api/batches/{batch_id}/retry", dependencies=[Depends(get_current_user)], status_code=202)
 def ulangi_batch(batch_id: int):
     with konek() as conn:
         b = conn.execute("select status from batches where id=%s", (batch_id,)).fetchone()
@@ -214,7 +260,7 @@ def ulangi_batch(batch_id: int):
 
 # ---------- dasbor ----------
 
-@app.get("/api/summary", dependencies=[Depends(admin)])
+@app.get("/api/summary", dependencies=[Depends(get_current_user)])
 def ringkasan():
     with konek() as conn:
         tandai_macet(conn)
@@ -259,7 +305,7 @@ def ringkasan():
         return media
 
 
-@app.get("/api/media/{media}/wordclouds", dependencies=[Depends(admin)])
+@app.get("/api/media/{media}/wordclouds", dependencies=[Depends(get_current_user)])
 def info_wordcloud(media: str):
     """Keterangan Word Cloud yang tersedia (gambarnya diambil lewat endpoint terpisah)."""
     with konek() as conn:
@@ -268,7 +314,7 @@ def info_wordcloud(media: str):
         ).fetchall()
 
 
-@app.get("/api/media/{media}/wordcloud/{label}", dependencies=[Depends(admin)])
+@app.get("/api/media/{media}/wordcloud/{label}", dependencies=[Depends(get_current_user)])
 def gambar_wordcloud(media: str, label: str):
     if label not in LABEL:
         raise HTTPException(404, "Sentimen tidak dikenal.")
@@ -279,7 +325,7 @@ def gambar_wordcloud(media: str, label: str):
     return Response(bytes(r["image"]), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
-@app.post("/api/maintenance/lengkapi", dependencies=[Depends(admin)], status_code=202)
+@app.post("/api/maintenance/lengkapi", dependencies=[Depends(get_current_user)], status_code=202)
 def lengkapi_data_lama():
     """Minta Space mengisi teks preprocessing dan Word Cloud untuk data lama (label tidak diubah)."""
     try:
@@ -310,7 +356,7 @@ def _saring(media, label, q):
     return ("where " + " and ".join(kondisi)) if kondisi else "", params
 
 
-@app.get("/api/responses", dependencies=[Depends(admin)])
+@app.get("/api/responses", dependencies=[Depends(get_current_user)])
 def tabel(
     media: str = "", label: str = "", q: str = Query("", max_length=100),
     halaman: int = Query(1, ge=1), per_halaman: int = Query(25, ge=5, le=100),
@@ -326,7 +372,7 @@ def tabel(
     return {"total": total, "halaman": halaman, "per_halaman": per_halaman, "baris": baris}
 
 
-@app.get("/api/responses/export", dependencies=[Depends(admin)])
+@app.get("/api/responses/export", dependencies=[Depends(get_current_user)])
 def ekspor(media: str = "", label: str = "", q: str = Query("", max_length=100)):
     where, params = _saring(media.strip(), label.strip(), q.strip())
     with konek() as conn:
@@ -348,7 +394,7 @@ def ekspor(media: str = "", label: str = "", q: str = Query("", max_length=100))
 
 # ---------- interpretasi ----------
 
-@app.get("/api/media/{media}/interpretation", dependencies=[Depends(admin)])
+@app.get("/api/media/{media}/interpretation", dependencies=[Depends(get_current_user)])
 def interpretasi(media: str):
     with konek() as conn:
         tandai_macet(conn)
@@ -379,8 +425,8 @@ def kirim_interpretasi(conn, interpretation_id):
         )
 
 
-@app.post("/api/media/{media}/interpret", dependencies=[Depends(admin)], status_code=202)
-def jalankan_interpretasi(media: str):
+@app.post("/api/media/{media}/interpret", status_code=202)
+def jalankan_interpretasi(media: str, user: dict = Depends(get_current_user)):
     with konek() as conn:
         tandai_macet(conn)
         jumlah = conn.execute(
@@ -397,7 +443,10 @@ def jalankan_interpretasi(media: str):
         ).fetchone()
         if aktif:
             raise HTTPException(409, "Interpretasi untuk media ini sedang diproses.")
-        run = conn.execute("insert into interpretations (media) values (%s) returning id", (media,)).fetchone()
+        run = conn.execute(
+            "insert into interpretations (user_id, media) values (%s, %s) returning id",
+            (user["id"], media),
+        ).fetchone()
         with conn.cursor() as cur:
             cur.executemany(
                 "insert into interpretation_results (interpretation_id, stage) values (%s, %s)", [(run["id"], t) for t in TAHAP]
@@ -406,7 +455,7 @@ def jalankan_interpretasi(media: str):
         return muat_interpretasi(conn, run["id"])
 
 
-@app.post("/api/interpretations/{interpretation_id}/retry", dependencies=[Depends(admin)], status_code=202)
+@app.post("/api/interpretations/{interpretation_id}/retry", dependencies=[Depends(get_current_user)], status_code=202)
 def ulangi_interpretasi(interpretation_id: int):
     with konek() as conn:
         run = conn.execute("select media, status from interpretations where id=%s", (interpretation_id,)).fetchone()

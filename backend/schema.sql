@@ -1,9 +1,17 @@
 -- Skema PostgreSQL untuk sistem analisis sentimen Arisza Library & Learning.
--- Untuk database baru: jalankan file ini sekali melalui SQL Editor Neon.
--- Untuk database lama: jalankan migrasi_penamaan_tabel.sql terlebih dahulu.
+-- Database baru: jalankan file ini sekali, lalu buat akun dengan create_user.py.
+-- Database lama: jalankan migrasi_penamaan_tabel.sql, file ini, lalu create_user.py.
+
+CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS batches (
     id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     filename    TEXT NOT NULL,
     total       INTEGER NOT NULL DEFAULT 0,
     status      TEXT NOT NULL DEFAULT 'queued'
@@ -15,7 +23,7 @@ CREATE TABLE IF NOT EXISTS batches (
 
 CREATE TABLE IF NOT EXISTS responses (
     id          BIGSERIAL PRIMARY KEY,
-    batch_id    INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+    batch_id    INTEGER NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
     media       TEXT NOT NULL,
     text        TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'pending'
@@ -29,9 +37,11 @@ CREATE TABLE IF NOT EXISTS responses (
 
 CREATE INDEX IF NOT EXISTS responses_media_idx ON responses (media);
 CREATE INDEX IF NOT EXISTS responses_batch_idx ON responses (batch_id, status);
+CREATE INDEX IF NOT EXISTS batches_user_idx ON batches (user_id, id DESC);
 
 CREATE TABLE IF NOT EXISTS interpretations (
     id              SERIAL PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     media           TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'queued'
                     CHECK (status IN ('queued', 'running', 'done', 'failed')),
@@ -49,6 +59,7 @@ CREATE TABLE IF NOT EXISTS interpretations (
 );
 
 CREATE INDEX IF NOT EXISTS interpretations_media_idx ON interpretations (media, id DESC);
+CREATE INDEX IF NOT EXISTS interpretations_user_idx ON interpretations (user_id, id DESC);
 
 CREATE TABLE IF NOT EXISTS interpretation_results (
     interpretation_id INTEGER NOT NULL

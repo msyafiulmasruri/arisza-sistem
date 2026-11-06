@@ -1,6 +1,6 @@
--- Migrasi nama tabel lama ke nama tabel baru tanpa menghapus data.
--- Jalankan satu kali pada database lama saat seluruh layanan/job dihentikan.
--- Ambil backup database sebelum menjalankan migrasi ini.
+-- Migrasi database lama: penamaan tabel dan penambahan akun pengguna tanpa menghapus data.
+-- Dapat dijalankan pada database lama yang masih memakai nama tabel awal maupun skema v2.
+-- Jalankan saat seluruh layanan/job dihentikan dan setelah membuat backup database.
 
 BEGIN;
 
@@ -60,6 +60,63 @@ BEGIN
     END IF;
 END
 $$;
+
+-- Pastikan setiap tanggapan terhubung ke satu proses impor, sesuai relasi 1:N pada ERD.
+-- Migrasi dihentikan jika masih ada tanggapan tanpa batch agar data tidak diubah diam-diam.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'responses'
+          AND column_name = 'batch_id'
+    ) THEN
+        IF EXISTS (SELECT 1 FROM public.responses WHERE batch_id IS NULL) THEN
+            RAISE EXCEPTION 'Migrasi dibatalkan: terdapat data responses dengan batch_id NULL. Periksa dan tentukan batch untuk data tersebut terlebih dahulu.';
+        END IF;
+        ALTER TABLE public.responses ALTER COLUMN batch_id SET NOT NULL;
+    END IF;
+END
+$$;
+
+-- Siapkan autentikasi akun. Kolom user_id dibuat nullable sementara agar akun pertama
+-- dapat dibuat melalui create_user.py dan data lama dapat dikaitkan tanpa menghapus data.
+CREATE TABLE IF NOT EXISTS public.users (
+    id            SERIAL PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.batches ADD COLUMN IF NOT EXISTS user_id INTEGER;
+ALTER TABLE public.interpretations ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.batches'::regclass
+          AND conname = 'batches_user_id_fkey'
+    ) THEN
+        ALTER TABLE public.batches
+            ADD CONSTRAINT batches_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.interpretations'::regclass
+          AND conname = 'interpretations_user_id_fkey'
+    ) THEN
+        ALTER TABLE public.interpretations
+            ADD CONSTRAINT interpretations_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS batches_user_idx ON public.batches (user_id, id DESC);
+CREATE INDEX IF NOT EXISTS interpretations_user_idx ON public.interpretations (user_id, id DESC);
 
 -- Nama sequence dan indeks disesuaikan agar konsisten. Data dan nilai sequence tetap dipertahankan.
 DO $$
