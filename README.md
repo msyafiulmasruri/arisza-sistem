@@ -158,7 +158,7 @@ Buka **terminal PowerShell kedua** agar AI Service tetap berjalan pada terminal 
 
 ```powershell
 cd backend
-py -3.11 -m venv .venv
+py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
