@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app import normalisasi_space_url
 from security import create_access_token, hash_password, verify_access_token, verify_password
 
 
@@ -32,6 +33,16 @@ class UjiKeamananAkun(unittest.TestCase):
     def test_token_kedaluwarsa_ditolak(self):
         token = create_access_token(7, "admin@example.com", "s" * 48, -1)
         self.assertIsNone(verify_access_token(token, "s" * 48))
+
+    def test_normalisasi_space_url(self):
+        self.assertEqual(
+            normalisasi_space_url("https://huggingface.co/spaces/rurisj/test-ai"),
+            "https://rurisj-test-ai.hf.space",
+        )
+        self.assertEqual(
+            normalisasi_space_url("https://rurisj-test-ai.hf.space/health/"),
+            "https://rurisj-test-ai.hf.space",
+        )
 
 
 if __name__ == "__main__":

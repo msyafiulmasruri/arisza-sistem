@@ -19,12 +19,26 @@ from psycopg.rows import dict_row
 
 from security import create_access_token, verify_access_token, verify_password
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+def normalisasi_space_url(raw_url: str) -> str:
+    """Ubah URL halaman Hugging Face Space menjadi URL runtime .hf.space bila diperlukan."""
+    u = (raw_url or "").strip().strip("\"'").rstrip("/")
+    m = re.match(r"^https?://huggingface\.co/spaces/([^/?#]+)/([^/?#]+)", u, re.IGNORECASE)
+    if m:
+        owner = re.sub(r"[^a-z0-9-]+", "-", m.group(1).lower()).strip("-")
+        space = re.sub(r"[^a-z0-9-]+", "-", m.group(2).lower()).strip("-")
+        return f"https://{owner}-{space}.hf.space"
+    for akhiran in ("/health", "/docs"):
+        if u.lower().endswith(akhiran):
+            u = u[: -len(akhiran)].rstrip("/")
+    return u
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "43200"))
-SPACE_URL = os.getenv("SPACE_URL", "").rstrip("/")
-SPACE_API_KEY = os.getenv("SPACE_API_KEY", "")
-HF_SPACE_TOKEN = os.getenv("HF_SPACE_TOKEN", "")
+SPACE_URL = normalisasi_space_url(os.getenv("SPACE_URL", ""))
+SPACE_API_KEY = os.getenv("SPACE_API_KEY", "").strip()
+HF_SPACE_TOKEN = (os.getenv("HF_SPACE_TOKEN", "") or os.getenv("HF_TOKEN", "")).strip()
 FRONTEND_ORIGINS = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
 BATAS_MACET_MENIT = int(os.getenv("BATAS_MACET_MENIT", "30"))
 MAKS_BARIS_IMPOR = int(os.getenv("MAKS_BARIS_IMPOR", "5000"))
@@ -94,6 +108,16 @@ def panggil_space(path, payload):
                 url, json=payload, headers=headers,
                 timeout=httpx.Timeout(8.0, connect=3.0),
             )
+            # Jika HF_SPACE_TOKEN kedaluwarsa tetapi Space sudah Public, ulangi tanpa header Authorization
+            if r.status_code in (401, 403, 404) and "Authorization" in headers and "<html" in (r.text or "").lower():
+                headers_tanpa_bearer = {"X-API-Key": SPACE_API_KEY}
+                r_ulang = httpx.post(
+                    url, json=payload, headers=headers_tanpa_bearer,
+                    timeout=httpx.Timeout(8.0, connect=3.0),
+                )
+                if r_ulang.status_code < 400:
+                    return
+                r = r_ulang
             if r.status_code in (502, 503, 504) and percobaan < 1:
                 time.sleep(1)
                 continue
@@ -111,6 +135,14 @@ def panggil_space(path, payload):
             ) from exc
         except httpx.HTTPStatusError as exc:
             isi = (exc.response.text or "").strip().replace("\n", " ")[:250]
+            if exc.response.status_code == 404 and "<html" in isi.lower():
+                raise RuntimeError(
+                    f"AI Service mengembalikan halaman HTML 404 dari Hugging Face ({SPACE_URL}). "
+                    "Penyebab utama: Space bersifat Private dan HF_SPACE_TOKEN di Backend Vercel belum diisi "
+                    "atau sudah kedaluwarsa (expired), atau SPACE_URL salah. "
+                    "Perbarui HF_SPACE_TOKEN di Vercel dengan Access Token Hugging Face yang aktif (atau ubah Space ke Public), "
+                    "lalu redeploy Backend Vercel."
+                ) from exc
             raise RuntimeError(
                 f"AI Service mengembalikan HTTP {exc.response.status_code}. "
                 f"Periksa API_KEY, akses Space, dan log layanan. Respons: {isi}"

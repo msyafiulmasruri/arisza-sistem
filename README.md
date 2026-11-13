@@ -21,54 +21,97 @@ PostgreSQL             -> Neon
 
 Backend dan AI Service menggunakan database Neon yang sama. Frontend tidak menyimpan API key, token Hugging Face, URL database, atau session secret.
 
-## 2. Environment Variables production
+## 2. Panduan Lengkap Environment Variables (Frontend, Backend, & Hugging Face Spaces)
 
-### Frontend Vercel
+### Ringkasan Kecocokan Antar-Layanan (Variabel yang Wajib Sama)
 
+| Pasangan Variabel | Lokasi 1 | Lokasi 2 | Aturan / Hint |
+|---|---|---|---|
+| **Kunci API Internal** | Backend: `SPACE_API_KEY` | HFS Secret: `API_KEY` | **Wajib sama persis.** Dipakai pada header `X-API-Key` saat Backend memanggil AI Service. |
+| **Koneksi Database** | Backend: `DATABASE_URL` | HFS Secret: `DATABASE_URL` | **Wajib mengarah ke database Neon yang sama.** Format: `postgresql://USER:PASSWORD@HOST/neondb?sslmode=require`. |
+| **Token Hugging Face** | Backend: `HF_SPACE_TOKEN` | HFS Secret: `HF_TOKEN` | Token akses Hugging Face (`hf_...`) yang **masih aktif (belum expired)**. Di Backend (`HF_SPACE_TOKEN`) wajib diisi jika Space berstatus **Private**. Di HFS (`HF_TOKEN`) wajib memiliki izin baca ke repo model Hybrid & `meta-llama/Llama-3.2-3B-Instruct`. |
+| **Alamat Backend** | Frontend: `VITE_API_URL` | Domain Vercel Backend | Tanpa garis miring `/` di akhir (contoh: `https://arisza-backend.vercel.app`). |
+| **Alamat Frontend (CORS)** | Backend: `FRONTEND_ORIGIN` | Domain Vercel Frontend | Tanpa garis miring `/` di akhir. Bisa lebih dari satu dipisahkan koma (contoh: `https://arisza-frontend.vercel.app,http://localhost:5173`). |
+
+---
+
+### A. Environment Variables Frontend (`frontend/.env` & Vercel Frontend)
+
+Tempat pengaturan:
+- **Production:** Vercel Dashboard → Project Frontend → **Settings → Environment Variables**
+- **Lokal:** File `frontend/.env`
+
+| Nama Variabel | Wajib? | Contoh Nilai Production (Vercel) | Contoh Nilai Lokal (`frontend/.env`) | Fungsi / Hint |
+|---|---|---|---|---|
+| `VITE_API_URL` | **Wajib** | `https://DOMAIN-BACKEND.vercel.app` | `http://127.0.0.1:8000` | URL tempat Backend FastAPI berjalan. Jangan tambahkan `/api` atau `/` di akhir. |
+
+Contoh isi `frontend/.env` (lokal):
 ```env
-VITE_API_URL=https://DOMAIN-BACKEND-VERCEL
+VITE_API_URL=http://127.0.0.1:8000
 ```
 
-### Backend Vercel
-
+Contoh isi di **Vercel Frontend** (production):
 ```env
-DATABASE_URL=URL_DATABASE_NEON
-SESSION_SECRET=SECRET_ACAK_MINIMAL_32_KARAKTER
-SPACE_URL=https://NAMA-SPACE.hf.space
-SPACE_API_KEY=KUNCI_YANG_SAMA_DENGAN_API_KEY_AI_SPACE
-FRONTEND_ORIGIN=https://DOMAIN-FRONTEND-VERCEL
+VITE_API_URL=https://DOMAIN-BACKEND-VERCEL.vercel.app
 ```
+> **Hint Frontend:** Jangan pernah memasukkan `SPACE_API_KEY`, `HF_SPACE_TOKEN`, `DATABASE_URL`, atau `SESSION_SECRET` ke Frontend karena seluruh variabel `VITE_*` dapat dilihat oleh publik di browser.
 
-Konfigurasi tambahan yang memiliki nilai bawaan dan dapat diatur bila diperlukan:
+---
 
+### B. Environment Variables Backend (`backend/.env` & Vercel Backend)
+
+Tempat pengaturan:
+- **Production:** Vercel Dashboard → Project Backend → **Settings → Environment Variables**
+- **Lokal:** File `backend/.env`
+
+| Nama Variabel | Wajib? | Contoh Nilai Production (Vercel) | Contoh Nilai Lokal (`backend/.env`) | Fungsi / Hint |
+|---|---|---|---|---|
+| `DATABASE_URL` | **Wajib** | `postgresql://USER:PASS@HOST/neondb?sslmode=require` | Sama dengan production | Connection string PostgreSQL Neon (harus sama dengan yang ada di HFS). |
+| `SESSION_SECRET` | **Wajib** | String acak minimal 32 karakter | String acak minimal 32 karakter | Kunci penandatangan token login JWT. Buat dengan: `python -c "import secrets; print(secrets.token_urlsafe(48))"`. |
+| `SPACE_URL` | **Wajib** | `https://rurisj-test-ai.hf.space` | `https://rurisj-test-ai.hf.space` (atau `http://127.0.0.1:7860` jika AI lokal) | Gunakan subdomain runtime `.hf.space` (tanpa `/health` di akhir). |
+| `SPACE_API_KEY` | **Wajib** | String rahasia acak | Sama dengan production | **Harus sama persis** dengan Secret `API_KEY` di Hugging Face Space. |
+| `HF_SPACE_TOKEN` | **Wajib jika Space Private** | `hf_xxxxxxxxxxxxxxxxxxxxxxxxx` | `hf_xxxxxxxxxxxxxxxxxxxxxxxxx` | User Access Token Hugging Face (`Read`) yang **masih aktif**. Jika token ini kedaluwarsa (*expired*) saat Space berstatus Private, HFS akan mengembalikan **HTTP 404 HTML**. |
+| `FRONTEND_ORIGIN` | **Wajib** | `https://DOMAIN-FRONTEND.vercel.app` | `http://localhost:5173,http://127.0.0.1:5173` | Daftar domain Frontend yang diizinkan mengakses Backend (CORS), pisahkan dengan koma tanpa spasi. |
+| `SESSION_TTL_SECONDS` | Opsional | `43200` | `43200` | Masa berlaku sesi login dalam detik (default `43200` = 12 jam). |
+| `BATAS_MACET_MENIT` | Opsional | `30` | `30` | Batas waktu (menit) sebelum pekerjaan `queued`/`running` yang macet ditandai `failed` agar bisa diulang. |
+| `MAKS_BARIS_IMPOR` | Opsional | `5000` | `5000` | Maksimum jumlah baris CSV yang dapat diimpor dalam satu kali unggah. |
+
+Contoh salinan siap pakai untuk **Backend Vercel**:
 ```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
+SESSION_SECRET=ISI_SECRET_ACAK_MINIMAL_32_KARAKTER
+SPACE_URL=https://rurisj-test-ai.hf.space
+SPACE_API_KEY=ISI_KUNCI_YANG_SAMA_DENGAN_API_KEY_DI_HFS
+HF_SPACE_TOKEN=hf_ISI_TOKEN_HUGGINGFACE_AKTIF_JIKA_SPACE_PRIVATE
+FRONTEND_ORIGIN=https://DOMAIN-FRONTEND-VERCEL.vercel.app
 SESSION_TTL_SECONDS=43200
 BATAS_MACET_MENIT=30
 MAKS_BARIS_IMPOR=5000
 ```
 
-`HF_SPACE_TOKEN` hanya diperlukan jika Hugging Face Space bersifat private. Jangan memasukkan rahasia ke frontend.
+---
 
-### Hugging Face Spaces (`test-ai`)
+### C. Environment Variables AI Service / Hugging Face Spaces (`test-ai`)
 
-Pada **Settings → Variables and secrets**, tambahkan tiga Secrets:
+Tempat pengaturan:
+- **Production:** Halaman Hugging Face Space (`rurisj/test-ai`) → **Settings → Variables and secrets → New secret** *(masukkan sebagai **Secret**, bukan Variable biasa agar nilainya terenkripsi dan tidak terjadi bentrok nama)*
+- **Lokal (opsional):** File `test-ai/.env`
 
-| Secret | Isi |
-|---|---|
-| `API_KEY` | Harus sama dengan `SPACE_API_KEY` pada backend Vercel. |
-| `DATABASE_URL` | URL Neon yang sama dengan backend. |
-| `HF_TOKEN` | Token Hugging Face dengan akses ke model Llama 3.2 dan repository bobot Hybrid jika repository tersebut private. |
+| Nama Secret | Wajib? | Contoh Nilai | Fungsi / Hint |
+|---|---|---|---|
+| `API_KEY` | **Wajib** | String rahasia acak | **Harus sama persis** dengan `SPACE_API_KEY` pada Backend Vercel. |
+| `DATABASE_URL` | **Wajib** | `postgresql://USER:PASS@HOST/neondb?sslmode=require` | **Harus sama persis** dengan `DATABASE_URL` pada Backend Vercel. |
+| `HF_TOKEN` | **Wajib** | `hf_xxxxxxxxxxxxxxxxxxxxxxxxx` | Token Hugging Face yang **masih aktif** dan memiliki izin akses baca ke repo model `rurisj/model-sentimen-hybridindobertbilstm` serta gated repo `meta-llama/Llama-3.2-3B-Instruct`. |
 
-Parameter model dan pemrosesan tidak perlu dimasukkan ke ENV. Semua sudah ditetapkan di `test-ai/app/config.py`:
+> **Hint HFS (`test-ai`):**
+> - Jangan memasukkan `API_KEY`, `DATABASE_URL`, atau `HF_TOKEN` ke bagian **Variables** dan **Secrets** secara bersamaan dengan nama yang sama karena akan memicu `CONFIG_ERROR: Collision on variables and secrets names`. Gunakan bagian **Secrets** saja.
+> - Parameter model dan pemrosesan **tidak perlu** dimasukkan ke ENV HFS karena sudah ditetapkan di `test-ai/app/config.py`:
+>   - Model Llama: `meta-llama/Llama-3.2-3B-Instruct` (`bfloat16`)
+>   - Kata & frasa teratas: masing-masing `10`
+>   - Maksimal token pola opini: `220`, maksimal token saran: `280`
+>   - Maksimal teks per permintaan prediksi: `200`, ukuran batch prediksi: `16`, riwayat pekerjaan: `50`
 
-- Model Llama: `meta-llama/Llama-3.2-3B-Instruct`.
-- Dtype: `bfloat16`.
-- Kata dan frasa teratas: masing-masing 10.
-- Maksimal token pola opini: 220.
-- Maksimal token saran: 280.
-- Maksimal teks per permintaan prediksi: 200.
-- Ukuran batch prediksi: 16.
-- Riwayat pekerjaan: 50.
+---
 
 ## 3. Deploy atau memperbarui AI Service
 
@@ -87,19 +130,18 @@ Setelah build selesai, uji alamat berikut:
 
 Endpoint `/health` harus mengembalikan `status: ok`. Sebelum klasifikasi pertama, `hybrid_status: not_loaded` adalah normal karena bobot Hybrid dimuat saat pertama kali diperlukan. Llama juga dimuat ketika interpretasi pertama diminta.
 
-## 4. Penanganan `Connection refused`
+## 4. Hint Troubleshooting Error Umum (Backend ↔ HFS)
 
-Jika backend menampilkan `Gagal menghubungi layanan AI` atau `Connection refused`, periksa secara berurutan:
+| Gejala / Pesan Error | Penyebab Utama | Solusi Cepat |
+|---|---|---|
+| `AI Service mengembalikan HTTP 404 ... Respons: <!DOCTYPE html>` | 1) Space berstatus **Private**, tetapi `HF_SPACE_TOKEN` di Backend Vercel belum diisi atau **sudah kedaluwarsa (*expired*)**.<br>2) `SPACE_URL` diisi URL halaman web `https://huggingface.co/spaces/...` bukan `https://NAMA-SPACE.hf.space`. | Perbarui `HF_SPACE_TOKEN` di Backend Vercel dengan Access Token Hugging Face (`hf_...`) yang masih aktif (atau ubah Space ke **Public**), pastikan `SPACE_URL=https://rurisj-test-ai.hf.space`, lalu **Redeploy** Backend Vercel. |
+| `AI Service mengembalikan HTTP 401 ... Kunci API tidak valid` | Nilai `SPACE_API_KEY` di Backend Vercel tidak sama dengan Secret `API_KEY` di Hugging Face Space. | Samakan nilai `SPACE_API_KEY` (Backend) dan `API_KEY` (HFS Secret), lalu redeploy. |
+| `hybrid_status: load_failed` (`401 Client Error` pada `/health`) | Secret `HF_TOKEN` di dalam Hugging Face Space sudah kedaluwarsa (*expired*) atau tidak punya akses ke repo model Hybrid/Llama. | Ganti Secret `HF_TOKEN` di Settings Hugging Face Space dengan Access Token Hugging Face yang aktif. |
+| `CONFIG_ERROR: Collision on variables and secrets names` di HFS | Nama variabel yang sama (misal `HF_TOKEN`) didaftarkan di **Variables** sekaligus di **Secrets** pada HFS. | Hapus duplikatnya dari bagian **Variables**, dan simpan hanya di bagian **Secrets**. |
+| `Tidak dapat terhubung ke AI Service` / `Connection refused` | Space sedang tidur (*Sleeping*), masih proses *Building*, atau `app_port` bukan `7860`. | Buka halaman Space di Hugging Face, pastikan statusnya **Running**, dan periksa tab **Logs / Container logs**. |
+| Error CORS saat login dari Frontend Vercel | Domain Frontend Vercel belum dimasukkan ke `FRONTEND_ORIGIN` di Backend Vercel. | Isi `FRONTEND_ORIGIN=https://DOMAIN-FRONTEND.vercel.app` (tanpa `/` di akhir) pada Backend Vercel, lalu redeploy. |
 
-1. Buka `SPACE_URL/health` secara langsung. Gunakan format `https://NAMA-SPACE.hf.space`, bukan URL halaman `https://huggingface.co/spaces/...`.
-2. Pastikan status Space **Running** dan proses build berhasil.
-3. Periksa **Logs** dan **Container logs** pada Space. Pastikan tidak ada kegagalan instalasi dependensi atau startup Uvicorn.
-4. Pastikan Docker menjalankan Uvicorn pada `0.0.0.0:7860` dan metadata Space menyatakan `app_port: 7860`.
-5. Pastikan `SPACE_API_KEY` pada backend sama persis dengan Secret `API_KEY` pada Space.
-6. Jika Space private, isi `HF_SPACE_TOKEN` pada backend dengan token yang memiliki akses ke Space tersebut.
-7. Setelah mengubah Environment Variables Vercel, lakukan redeploy backend.
-
-Pemuatan model Hybrid dilakukan secara tertunda (lazy loading), sehingga kegagalan unduh atau muat bobot tidak lagi menghentikan startup FastAPI. Jika pemuatan model gagal, endpoint `/health` tetap dapat diakses dan detail kegagalan dicatat pada Logs Space.
+Pemuatan model Hybrid dilakukan secara tertunda (*lazy loading*), sehingga kegagalan unduh atau muat bobot tidak menghentikan startup FastAPI. Jika pemuatan model gagal, endpoint `/health` tetap dapat diakses dan detail kegagalan dicatat pada field `hybrid_load_error` serta Logs Space.
 
 ## 5. Persiapan database Neon
 
