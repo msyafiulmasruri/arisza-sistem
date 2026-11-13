@@ -18,13 +18,15 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
   const [label, setLabel] = useState("");
   const [cari, setCari] = useState("");
   const [halaman, setHalaman] = useState(1);
-  const [perHalaman, setPerHalaman] = useState(25);
+  const [perHalaman] = useState(10);
   const [data, setData] = useState(null);
   const [galat, setGalat] = useState("");
   const [sibukUnduh, setSibukUnduh] = useState(false);
   const q = useTunda(cari);
 
-  useEffect(() => { setHalaman(1); }, [pilihMedia, label, q, perHalaman]);
+  useEffect(() => {
+    setHalaman(1);
+  }, [pilihMedia, label, q, perHalaman]);
 
   const muat = useCallback(async () => {
     try {
@@ -35,7 +37,9 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
     }
   }, [pilihMedia, label, q, halaman, perHalaman]);
 
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => {
+    muat();
+  }, [muat]);
 
   async function unduh() {
     setSibukUnduh(true);
@@ -54,7 +58,7 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
       <section className="kosong-blok">
         <h2>Belum ada tanggapan</h2>
         <p>Tabel terisi setelah data diimpor.</p>
-        <button onClick={bukaImpor}>Impor data</button>
+        <button className="tombol-utama" onClick={bukaImpor}>Impor Data</button>
       </section>
     );
   }
@@ -64,86 +68,131 @@ export default function Tabel({ media, terpilih, bukaImpor }) {
   const akhir = data ? Math.min(data.total, data.halaman * data.per_halaman) : 0;
 
   return (
-    <section className="blok">
-      <h1>Tabel data</h1>
-      <p className="redup">Setiap baris memuat teks awal, teks hasil preprocessing, sentimen hasil prediksi, skor confidence, dan asal media.</p>
-
-      <div className="saring">
-        <div>
-          <label htmlFor="t-media">Media</label>
-          <select id="t-media" value={pilihMedia} onChange={(e) => setPilihMedia(e.target.value)}>
-            <option value={SEMUA}>Semua media</option>
-            {media.map((m) => <option key={m.media} value={m.media}>{m.media} ({m.total.toLocaleString("id-ID")})</option>)}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="t-label">Sentimen</label>
-          <select id="t-label" value={label} onChange={(e) => setLabel(e.target.value)}>
-            <option value="">Semua sentimen</option>
-            {Object.entries(NAMA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            <option value="empty">Kosong setelah preprocessing</option>
-          </select>
-        </div>
-        <div className="lebar">
-          <label htmlFor="t-cari">Cari kata</label>
-          <input id="t-cari" type="text" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari di teks awal atau hasil preprocessing" maxLength={100} />
-        </div>
-        <div>
-          <label htmlFor="t-per">Baris per halaman</label>
-          <select id="t-per" value={perHalaman} onChange={(e) => setPerHalaman(Number(e.target.value))}>
-            {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </div>
-        <div className="aksi-tabel">
-          <button className="kecil" onClick={unduh} disabled={sibukUnduh || !data?.total}>{sibukUnduh ? "Menyiapkan…" : "Unduh CSV"}</button>
-        </div>
-      </div>
+    <div className="susun-halaman">
+      <section className="kartu baris-saring" aria-label="Pencarian dan filter">
+        <input
+          id="t-cari"
+          className="input-cari"
+          type="text"
+          value={cari}
+          onChange={(e) => setCari(e.target.value)}
+          placeholder="Cari tanggapan..."
+          aria-label="Cari tanggapan"
+          maxLength={100}
+        />
+        <select
+          id="t-media"
+          value={pilihMedia}
+          onChange={(e) => setPilihMedia(e.target.value)}
+          aria-label="Filter media digital"
+        >
+          <option value={SEMUA}>Semua media</option>
+          {media.map((m) => (
+            <option key={m.media} value={m.media}>
+              {m.media} ({m.total.toLocaleString("id-ID")})
+            </option>
+          ))}
+        </select>
+        <select
+          id="t-label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          aria-label="Filter sentimen"
+        >
+          <option value="">Semua sentimen</option>
+          {Object.entries(NAMA).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+          <option value="empty">Kosong setelah preprocessing</option>
+        </select>
+        <button className="tombol-utama tombol-unduh" onClick={unduh} disabled={sibukUnduh || !data?.total}>
+          {sibukUnduh ? "Menyiapkan…" : "Unduh Hasil"}
+        </button>
+      </section>
 
       <Pesan jenis="galat">{galat}</Pesan>
-      {!data && !galat && <p className="redup">Memuat…</p>}
 
-      {data && (
-        <>
-          <p className="redup" aria-live="polite">
-            {data.total ? `Menampilkan ${awal.toLocaleString("id-ID")}–${akhir.toLocaleString("id-ID")} dari ${data.total.toLocaleString("id-ID")} baris` : "Tidak ada baris yang cocok."}
-          </p>
-          <div className="gulung">
-            <table className="tabel-data">
-              <thead>
-                <tr>
-                  <th scope="col">No</th>
-                  <th scope="col">Media</th>
-                  <th scope="col">Teks awal</th>
-                  <th scope="col">Teks hasil preprocessing</th>
-                  <th scope="col">Sentimen</th>
-                  <th scope="col" className="angka">Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.baris.map((b, i) => (
-                  <tr key={b.id}>
-                    <td>{awal + i}</td>
-                    <td>{b.media}</td>
-                    <td className="teks">{b.text}</td>
-                    <td className="teks">{b.clean_text ?? <span className="redup">belum tersedia</span>}</td>
-                    <td>
-                      {b.label ? <span className={`chip s-${b.label}`}>{NAMA[b.label]}</span>
-                        : b.status === "empty" ? <span className="chip">Kosong</span>
-                        : <span className="redup">{b.status === "pending" ? "menunggu" : "—"}</span>}
-                    </td>
-                    <td className="angka">{b.confidence == null ? "—" : b.confidence.toFixed(4)}</td>
+      <section className="kartu">
+        {!data && !galat && <p className="redup">Memuat…</p>}
+        {data && (
+          <>
+            <div className="gulung">
+              <table className="tabel-data">
+                <thead>
+                  <tr>
+                    <th scope="col" className="kol-no">No</th>
+                    <th scope="col" className="kol-media">Media Digital</th>
+                    <th scope="col">Isi Tanggapan</th>
+                    <th scope="col" className="kol-sentimen">Sentimen</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <nav className="halaman" aria-label="Halaman tabel">
-            <button className="kecil" onClick={() => setHalaman((h) => Math.max(1, h - 1))} disabled={halaman <= 1}>Sebelumnya</button>
-            <span>Halaman {halaman} dari {jumlahHalaman}</span>
-            <button className="kecil" onClick={() => setHalaman((h) => Math.min(jumlahHalaman, h + 1))} disabled={halaman >= jumlahHalaman}>Berikutnya</button>
-          </nav>
-        </>
-      )}
-    </section>
+                </thead>
+                <tbody>
+                  {data.baris.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="redup">
+                        Tidak ada baris yang cocok.
+                      </td>
+                    </tr>
+                  ) : (
+                    data.baris.map((b, i) => (
+                      <tr key={b.id}>
+                        <td className="redup">{awal + i}</td>
+                        <td>{b.media}</td>
+                        <td className="teks" title={b.clean_text ? `Hasil preprocessing: ${b.clean_text}` : undefined}>
+                          {b.text}
+                        </td>
+                        <td>
+                          {b.label ? (
+                            <span
+                              className={`chip s-${b.label}`}
+                              title={b.confidence != null ? `Confidence: ${b.confidence.toFixed(4)}` : undefined}
+                            >
+                              {NAMA[b.label]}
+                            </span>
+                          ) : b.status === "empty" ? (
+                            <span className="chip">Kosong</span>
+                          ) : (
+                            <span className="redup">{b.status === "pending" ? "Menunggu" : "—"}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="kaki-tabel">
+              <span className="redup" aria-live="polite">
+                {data.total
+                  ? `${awal.toLocaleString("id-ID")}–${akhir.toLocaleString("id-ID")} dari ${data.total.toLocaleString("id-ID")}`
+                  : "0 dari 0"}
+              </span>
+              <nav className="halaman" aria-label="Halaman tabel">
+                <button
+                  className="tombol-sekunder kecil"
+                  onClick={() => setHalaman((h) => Math.max(1, h - 1))}
+                  disabled={halaman <= 1}
+                >
+                  Sebelumnya
+                </button>
+                <span className="kotak-halaman" aria-current="page">
+                  {halaman}
+                </span>
+                <button
+                  className="tombol-sekunder kecil"
+                  onClick={() => setHalaman((h) => Math.min(jumlahHalaman, h + 1))}
+                  disabled={halaman >= jumlahHalaman}
+                >
+                  Berikutnya
+                </button>
+              </nav>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
   );
 }

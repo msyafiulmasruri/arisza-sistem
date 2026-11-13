@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.js";
-import { Pesan, STATUS, aktif, lama, tanggal, useBerkala } from "./util.jsx";
-
-const TAHAP = [
-  ["positive", "Pola opini positif"],
-  ["neutral", "Pola opini netral"],
-  ["negative", "Pola opini negatif"],
-  ["saran", "Saran tindak lanjut"],
-];
+import { NAMA, Pesan, STATUS, URUTAN, aktif, lama, tanggal, useBerkala } from "./util.jsx";
 
 function DaftarFrekuensi({ judul, daftar }) {
   if (!daftar?.length) return <p className="catatan-kecil">Tidak ada kata atau frasa yang memenuhi kriteria.</p>;
@@ -15,7 +8,12 @@ function DaftarFrekuensi({ judul, daftar }) {
     <div className="gulung">
       <h4>{judul}</h4>
       <table className="tabel-data">
-        <thead><tr><th>{judul === "Kata yang sering muncul" ? "Kata" : "Frasa"}</th><th className="angka">Kemunculan</th></tr></thead>
+        <thead>
+          <tr>
+            <th>{judul === "Kata yang sering muncul" ? "Kata" : "Frasa"}</th>
+            <th className="angka">Kemunculan</th>
+          </tr>
+        </thead>
         <tbody>
           {daftar.map((item) => (
             <tr key={item.teks}>
@@ -29,88 +27,119 @@ function DaftarFrekuensi({ judul, daftar }) {
   );
 }
 
-function Tahap({ run }) {
-  const per = Object.fromEntries(run.tahap.map((t) => [t.stage, t]));
+function SkeletonBaris({ jumlah = 5 }) {
   return (
-    <ol className="tahap">
-      {TAHAP.map(([id, judul]) => {
-        const t = per[id];
-        if (!t) return null;
-        return (
-          <li key={id} className={`t-${t.status}`}>
-            <div className="t-kepala">
-              <h3>{judul}</h3>
-              <span className="chip">{STATUS[t.status]}</span>
-              {t.status === "done" && t.duration > 0 && <span className="redup">{lama(t.duration)}</span>}
-              {id !== "saran" && t.status === "done" && t.texts_total > 0 && (
-                <span className="redup">{t.texts_total.toLocaleString("id-ID")} tanggapan dianalisis</span>
-              )}
-            </div>
-            {t.status === "running" && (
-              <div className="proses">
-                <p className="redup">
-                  {id === "saran"
-                    ? "Llama sedang menyusun saran tindak lanjut…"
-                    : "Llama sedang menyusun pola opini berdasarkan frekuensi kata dan frasa…"}
-                </p>
-              </div>
-            )}
-            {t.status === "failed" && <Pesan jenis="galat">{t.error}</Pesan>}
-            {t.status === "done" && <p className="hasil">{t.result}</p>}
-            {t.status === "done" && id !== "saran" && t.detail?.metode === "frekuensi_v1" && (
-              <details className="rincian">
-                <summary>Lihat kata dan frasa yang dianalisis</summary>
-                <p className="catatan-kecil">
-                  Penghitungan dilakukan terhadap {(t.detail.jumlah_tanggapan ?? t.texts_total ?? 0).toLocaleString("id-ID")} tanggapan.
-                  Angka menunjukkan jumlah kemunculan kata atau frasa, bukan jumlah pengunjung yang berbeda.
-                </p>
-                <DaftarFrekuensi judul="Kata yang sering muncul" daftar={t.detail.kata} />
-                <DaftarFrekuensi judul="Frasa yang sering muncul" daftar={t.detail.frasa} />
-                {t.detail.waktu_penghitungan != null && (
-                  <p className="catatan-kecil">Waktu penghitungan Python: {durasiRinci(t.detail.waktu_penghitungan)}.</p>
-                )}
-                {!t.detail.llama_dipanggil && (
-                  <p className="catatan-kecil">Llama tidak dipanggil karena tidak tersedia kata atau frasa yang cukup untuk diinterpretasikan.</p>
-                )}
-              </details>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <div className="skeleton-grup" aria-hidden="true">
+      {Array.from({ length: jumlah }).map((_, idx) => (
+        <span key={idx} className={`skeleton-baris s-${(idx % 5) + 1}`} />
+      ))}
+    </div>
   );
 }
 
-const totalDurasi = (run) => run.tahap.reduce((a, t) => a + (t.status === "done" ? Number(t.duration || 0) : 0), 0);
-const durasiRinci = (detik) => Number(detik) < 1
-  ? `${Number(detik).toFixed(2).replace(".", ",")} detik`
-  : lama(detik);
+function pecahSaran(teks) {
+  if (!teks) return [];
+  const baris = String(teks)
+    .split(/\n+/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  const poin = baris.map((b) => b.replace(/^\s*[1-9][.)]\s*/, "").trim()).filter(Boolean);
+  return poin.length ? poin : [String(teks).trim()];
+}
 
-function WaktuSemuaMedia({ media }) {
-  const baris = media.filter((m) => m.interpretasi.ada_hasil && m.interpretasi.total_detik != null);
-  if (!baris.length) return null;
+function PanelPolaDanSaran({ run, info }) {
+  const per = Object.fromEntries((run?.tahap || []).map((t) => [t.stage, t]));
+  const saranTahap = per.saran;
+  const daftarSaran = saranTahap?.status === "done" ? pecahSaran(saranTahap.result) : [];
+
   return (
-    <div className="blok">
-      <h2>Waktu pemrosesan Llama per media</h2>
-      <p className="redup">
-        Dari interpretasi terakhir yang selesai pada tiap media. Waktu diukur di Space (CPU) dan tidak termasuk
-        pemuatan model.
-      </p>
-      <div className="gulung">
-        <table className="tabel-data">
-          <thead><tr><th>Media</th><th className="angka">Jumlah teks</th><th className="angka">Total waktu Llama</th></tr></thead>
-          <tbody>
-            {baris.map((m) => (
-              <tr key={m.media}>
-                <td>{m.media}</td>
-                <td className="angka">{(m.interpretasi.n_teks ?? m.total ?? 0).toLocaleString("id-ID")}</td>
-                <td className="angka">{lama(m.interpretasi.total_detik)}</td>
-              </tr>
+    <>
+      <section className="kartu">
+        <h2>Pola Opini</h2>
+        <div className="tiga-kolom">
+          {URUTAN.map((id) => {
+            const t = per[id];
+            const jml = t?.texts_total ?? info?.[id] ?? 0;
+            return (
+              <article key={id} className="kotak-pola">
+                <header className="kepala-pola">
+                  <h3>{NAMA[id]}</h3>
+                  <span className="redup">{Number(jml).toLocaleString("id-ID")} teks</span>
+                </header>
+                <div className="isi-pola">
+                  {t?.status === "done" && <p className="hasil">{t.result}</p>}
+                  {t?.status === "running" && (
+                    <>
+                      <SkeletonBaris jumlah={5} />
+                      <p className="catatan-kecil">Llama sedang menyusun pola opini…</p>
+                    </>
+                  )}
+                  {t?.status === "waiting" && (
+                    <>
+                      <SkeletonBaris jumlah={5} />
+                      <p className="catatan-kecil">Menunggu giliran pemrosesan…</p>
+                    </>
+                  )}
+                  {t?.status === "failed" && <Pesan jenis="galat">{t.error}</Pesan>}
+                  {!t && (
+                    <>
+                      <SkeletonBaris jumlah={5} />
+                      <p className="catatan-kecil">Belum ada hasil interpretasi.</p>
+                    </>
+                  )}
+                </div>
+                <div className="kaki-pola">
+                  {t?.status === "done" && t.detail?.metode === "frekuensi_v1" ? (
+                    <details className="rincian-kata">
+                      <summary className="tombol-sekunder kecil">Kata &amp; Frasa</summary>
+                      <div className="isi-rincian-kata">
+                        <DaftarFrekuensi judul="Kata yang sering muncul" daftar={t.detail.kata} />
+                        <DaftarFrekuensi judul="Frasa yang sering muncul" daftar={t.detail.frasa} />
+                      </div>
+                    </details>
+                  ) : (
+                    <button type="button" className="tombol-sekunder kecil" disabled>
+                      Kata &amp; Frasa
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="kartu">
+        <h2>Saran Tindak Lanjut</h2>
+        {saranTahap?.status === "failed" && <Pesan jenis="galat">{saranTahap.error}</Pesan>}
+        {saranTahap?.status === "done" && daftarSaran.length > 0 ? (
+          <ol className="daftar-saran">
+            {daftarSaran.map((isi, idx) => (
+              <li key={idx} className="item-saran">
+                <span className="nomor-saran">{idx + 1}</span>
+                <p className="teks-saran">{isi}</p>
+              </li>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </ol>
+        ) : (
+          <ol className="daftar-saran" aria-label="Placeholder saran tindak lanjut">
+            {[1, 2, 3].map((no) => (
+              <li key={no} className="item-saran">
+                <span className="nomor-saran">{no}</span>
+                <div className="wadah-skeleton-saran">
+                  <span className="skeleton-baris s-1" />
+                  <span className="skeleton-baris s-3" />
+                  {saranTahap?.status === "running" && no === 1 && (
+                    <span className="catatan-kecil">Llama sedang menyusun saran tindak lanjut…</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+        {run?.status === "done" && run.catatan && <p className="catatan-kecil catatan-bawah">{run.catatan}</p>}
+      </section>
+    </>
   );
 }
 
@@ -129,11 +158,21 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
     }
   }, [terpilih]);
 
-  useEffect(() => { setData(null); muat(); }, [muat]);
+  useEffect(() => {
+    setData(null);
+    muat();
+  }, [muat]);
 
   const run = data?.terbaru;
   const jalan = !!run && aktif(run.status);
-  useBerkala(async () => { await muat(); muatUlang(); }, jalan, 5000);
+  useBerkala(
+    async () => {
+      await muat();
+      muatUlang();
+    },
+    jalan,
+    5000
+  );
 
   if (!media) return <p className="redup">Memuat…</p>;
   if (!media.length) {
@@ -141,7 +180,7 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
       <section className="kosong-blok">
         <h2>Belum ada media</h2>
         <p>Interpretasi disusun per media setelah data diimpor.</p>
-        <button onClick={bukaImpor}>Impor data</button>
+        <button className="tombol-utama" onClick={bukaImpor}>Impor Data</button>
       </section>
     );
   }
@@ -167,79 +206,76 @@ export default function Interpretasi({ media, terpilih, setTerpilih, muatUlang, 
 
   const tidakBisa = sibuk || jalan || (data?.menunggu_prediksi ?? 0) > 0 || !data?.jumlah_teks;
 
+  const statusKode = jalan
+    ? "running"
+    : gagal
+      ? "failed"
+      : info?.interpretasi.ada_hasil
+        ? "done"
+        : "waiting";
+
+  const statusLabel = jalan
+    ? "Diproses"
+    : gagal
+      ? "Gagal"
+      : info?.interpretasi.ada_hasil
+        ? info.interpretasi.basi
+          ? "Perlu diperbarui"
+          : "Selesai"
+        : "Belum ada";
+
+  const runAktif = run || sebelumnya;
+
   return (
-    <div className="dua">
-      <aside aria-label="Pilih media">
-        <ul className="pilih-media">
-          {media.map((m) => (
-            <li key={m.media}>
-              <button className={m.media === terpilih ? "aktif" : ""} aria-pressed={m.media === terpilih}
-                onClick={() => setTerpilih(m.media)}>
-                <span>{m.media}</span>
-                <small>
-                  {aktif(m.interpretasi.status) ? "Diproses"
-                    : m.interpretasi.status === "failed" ? "Gagal"
-                    : m.interpretasi.ada_hasil ? (m.interpretasi.basi ? "Belum diperbarui" : "Selesai") : "Belum ada"}
-                </small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className="susun-halaman">
+      <section className="kartu baris-kontrol-interpretasi">
+        <div className="kiri-kontrol-interpretasi">
+          <select
+            id="pilih-media-int"
+            value={terpilih}
+            onChange={(e) => setTerpilih(e.target.value)}
+            aria-label="Pilih media digital"
+          >
+            {media.map((m) => (
+              <option key={m.media} value={m.media}>
+                {m.media} ({m.total.toLocaleString("id-ID")} teks)
+              </option>
+            ))}
+          </select>
+          <span className="redup">Status:</span>
+          <span className={`chip c-${statusKode}`}>{statusLabel}</span>
+          {selesaiTerbaru && run?.finished_at && (
+            <span className="redup catatan-waktu">{tanggal(run.finished_at)}</span>
+          )}
+        </div>
 
-      <section className="detail">
-        <header className="detail-kepala">
-          <div>
-            <h1>{terpilih}</h1>
-            <p className="redup">{info?.total ?? 0} teks berlabel</p>
-          </div>
-          <div className="aksi">
-            {gagal ? (
-              <button disabled={tidakBisa} onClick={() => mulai(() => api.ulangiInterpretasi(run.id))}>
-                {sibuk ? "Mengirim…" : "Ulangi dari tahap yang gagal"}
-              </button>
-            ) : (
-              <button disabled={tidakBisa} onClick={() => mulai(() => api.jalankan(terpilih))}>
-                {jalan ? "Sedang diproses…" : sibuk ? "Mengirim…" : sebelumnya ? "Perbarui interpretasi" : "Jalankan interpretasi"}
-              </button>
-            )}
-          </div>
-        </header>
-
-        <Pesan jenis="galat">{galat}</Pesan>
-        {data?.menunggu_prediksi > 0 && <Pesan>Prediksi sentimen untuk {data.menunggu_prediksi} teks masih berjalan. Interpretasi bisa dimulai setelah selesai.</Pesan>}
-        {info?.interpretasi.basi && !jalan && <Pesan>Interpretasi belum menggunakan metode frekuensi kata dan frasa terbaru atau terdapat data baru. Jalankan ulang agar hasil diperbarui.</Pesan>}
-        {jalan && <Pesan>Proses berjalan di layanan AI dan tersimpan di basis data. Python menghitung kata dan frasa yang sering muncul, kemudian Llama menyusun pola opini serta saran tindak lanjut. Halaman ini boleh ditutup; hasil tetap tersedia saat dibuka kembali.</Pesan>}
-        {gagal && <Pesan jenis="galat">{run.error}</Pesan>}
-
-        {!data && !galat && <p className="redup">Memuat…</p>}
-        {data && !run && <p className="redup">Interpretasi belum pernah dijalankan untuk media ini.</p>}
-
-        {run && (jalan || gagal || selesaiTerbaru) && (
-          <div className="blok">
-            <div className="ai-kepala">
-              <span className="chip ai">Dihasilkan AI</span>
-              <span className="redup">{selesaiTerbaru ? `Selesai ${tanggal(run.finished_at)}` : `Dimulai ${tanggal(run.created_at)}`}</span>
-              {totalDurasi(run) > 0 && (
-                <span className="redup">Total waktu Llama: <b>{lama(totalDurasi(run))}</b></span>
-              )}
-            </div>
-            <Tahap run={run} />
-            {selesaiTerbaru && run.catatan && <p className="catatan-kecil">{run.catatan}</p>}
-          </div>
-        )}
-
-        {sebelumnya && !selesaiTerbaru && (
-          <details className="blok">
-            <summary>Hasil sebelumnya ({tanggal(sebelumnya.finished_at)})</summary>
-            <div className="ai-kepala"><span className="chip ai">Dihasilkan AI</span></div>
-            <Tahap run={sebelumnya} />
-            {sebelumnya.catatan && <p className="catatan-kecil">{sebelumnya.catatan}</p>}
-          </details>
-        )}
-
-        <WaktuSemuaMedia media={media} />
+        <div className="aksi">
+          {gagal ? (
+            <button className="tombol-utama" disabled={tidakBisa} onClick={() => mulai(() => api.ulangiInterpretasi(run.id))}>
+              {sibuk ? "Mengirim…" : "Ulangi Interpretasi"}
+            </button>
+          ) : (
+            <button className="tombol-utama" disabled={tidakBisa} onClick={() => mulai(() => api.jalankan(terpilih))}>
+              {jalan ? "Sedang diproses…" : sibuk ? "Mengirim…" : "Jalankan Interpretasi"}
+            </button>
+          )}
+        </div>
       </section>
+
+      <Pesan jenis="galat">{galat}</Pesan>
+      {data?.menunggu_prediksi > 0 && (
+        <Pesan>
+          Prediksi sentimen untuk {data.menunggu_prediksi} teks masih berjalan. Interpretasi bisa dimulai setelah selesai.
+        </Pesan>
+      )}
+      {info?.interpretasi.basi && !jalan && (
+        <Pesan>
+          Terdapat data tanggapan baru sejak interpretasi terakhir. Jalankan ulang agar hasil diperbarui.
+        </Pesan>
+      )}
+      {gagal && <Pesan jenis="galat">{run.error}</Pesan>}
+
+      <PanelPolaDanSaran run={runAktif} info={info} />
     </div>
   );
 }

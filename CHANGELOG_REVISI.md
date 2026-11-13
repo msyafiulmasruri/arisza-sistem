@@ -36,6 +36,25 @@
 - `backend/create_user.py` membuat akun, mengaitkan data lama yang belum memiliki `user_id` dengan akun pertama, lalu menetapkan `user_id` menjadi `NOT NULL`.
 - Backup database wajib dibuat sebelum migrasi.
 
+## Perancangan ulang antarmuka (UI) sesuai Wireframe Revisi
+
+- Tata letak utama diubah dari navigasi tab horizontal menjadi **Sidebar Navigasi tetap (`260px`)** di kiri dan **Topbar Header (`76px`)** dengan indikator akun `Pengelola` di kanan.
+- **Halaman Login**: Kartu login terpusat dengan identitas `Arisza Library & Learning`, input email, input password, dan tombol `Login`.
+- **Halaman Dashboard**:
+  - Empat kartu ringkasan metrik di bagian atas (`Total Tanggapan`, `Positif`, `Netral`, `Negatif` beserta persentase).
+  - Dua panel berdampingan di bagian tengah: grafik batang vertikal `Distribusi Sentimen` dan daftar `Hasil per Media Digital` dengan pintasan ke `Interpretasi`.
+  - Panel `Word Cloud` tiga kolom (`Positif`, `Netral`, `Negatif`) sesuai media digital terpilih.
+- **Halaman Impor Data**:
+  - Dua panel berdampingan di bagian atas: `Unggah Dataset` (area dropzone seret berkas, tombol `Pilih File`, input opsional nama media, tombol `Unggah`) dan `Status File` (nama berkas, badge status, progress bar klasifikasi otomatis).
+  - Tabel `Riwayat Unggah` di bagian bawah (`Nama File`, `Tanggal`, `Progres`, `Status` + tombol `Ulangi` bila gagal).
+- **Halaman Data Tanggapan**:
+  - Satu baris kontrol pencarian (`Cari tanggapan...`), filter media digital, filter sentimen, dan tombol `Unduh Hasil`.
+  - Tabel 4 kolom (`No`, `Media Digital`, `Isi Tanggapan`, `Sentimen`) dengan navigasi halaman di bagian bawah.
+- **Halaman Interpretasi**:
+  - Bar kontrol pemilihan media digital, indikator status interpretasi, dan tombol `Jalankan Interpretasi`.
+  - Panel `Pola Opini` terpisah menjadi 3 kolom sentimen berdampingan (`Positif`, `Netral`, `Negatif`) lengkap dengan tombol rincian `Kata & Frasa`.
+  - Panel `Saran Tindak Lanjut` terpisah di bagian bawah dalam bentuk daftar poin bernomor (`1`, `2`, `3`).
+
 ## Pengujian
 
 - Pengujian unit AI Service: 25 pengujian lulus pada lingkungan kerja ini.

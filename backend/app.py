@@ -388,7 +388,7 @@ def _saring(media, label, q):
 @app.get("/api/responses", dependencies=[Depends(get_current_user)])
 def tabel(
     media: str = "", label: str = "", q: str = Query("", max_length=100),
-    halaman: int = Query(1, ge=1), per_halaman: int = Query(25, ge=5, le=100),
+    halaman: int = Query(1, ge=1), per_halaman: int = Query(10, ge=5, le=100),
 ):
     where, params = _saring(media.strip(), label.strip(), q.strip())
     with konek() as conn:
