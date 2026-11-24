@@ -1,0 +1,15 @@
+# Jangan masukkan rahasia dan file development lokal ke image
+.env
+.env.*
+.venv/
+venv/
+.git/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+model/*.pt
+smoke_test.py
+tests/

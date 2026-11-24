@@ -1,0 +1,51 @@
+erDiagram
+    USERS ||--o{ BATCHES : mengunggah
+    USERS ||--o{ INTERPRETATIONS : menjalankan
+    BATCHES ||--o{ RESPONSES : memiliki
+    INTERPRETATIONS ||--o{ INTERPRETATION_RESULTS : memiliki
+
+    USERS {
+        int id PK
+        text email UK
+        text password_hash
+        timestamptz created_at
+    }
+
+    BATCHES {
+        int id PK
+        int user_id FK
+        text filename
+        int total
+        text status
+    }
+
+    RESPONSES {
+        bigint id PK
+        int batch_id FK
+        text media
+        text text
+        text label
+        real confidence
+        text clean_text
+        text wc_text
+    }
+
+    INTERPRETATIONS {
+        int id PK
+        int user_id FK
+        text media
+        text status
+    }
+
+    INTERPRETATION_RESULTS {
+        int interpretation_id PK, FK
+        text stage PK
+        text status
+        text result
+    }
+
+    WORDCLOUDS {
+        text media PK
+        text label PK
+        bytea image
+    }

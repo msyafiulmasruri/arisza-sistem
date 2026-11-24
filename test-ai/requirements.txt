@@ -1,0 +1,11 @@
+# PyTorch dipasang terpisah sesuai OS/perangkat. Lihat README.md.
+transformers==5.19.0
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic>=2
+emoji
+huggingface_hub
+psycopg[binary]>=3.2
+Sastrawi
+wordcloud
